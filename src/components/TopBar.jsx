@@ -1,13 +1,20 @@
-import { CalendarDays, Grid3X3, RotateCcw, ThermometerSun } from "lucide-react";
+import { CalendarDays, RotateCcw, ThermometerSun } from "lucide-react";
+
+const avatarSrc = `${import.meta.env.BASE_URL}avatar.png`;
 
 export function TopBar({ scenario, onScenarioChange, time, onTimeChange, budget, placedCount, onReset }) {
   return (
     <header className="topbar">
       <div className="brand">
-        <span className="brand-mark" aria-hidden="true">
-          <Grid3X3 size={21} strokeWidth={2.2} />
-        </span>
-        <div>
+        <a
+          className="brand-mark"
+          href="https://craftsfool.com"
+          aria-label="Visit Craftsfool home"
+          title="Visit Craftsfool home"
+        >
+          <img src={avatarSrc} alt="" />
+        </a>
+        <div className="brand-copy">
           <h1>Heat Relief Planner</h1>
           <p>Pixel-grid site selection</p>
         </div>

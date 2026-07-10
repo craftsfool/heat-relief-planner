@@ -46,7 +46,7 @@ button { color: inherit; }
   z-index: 10;
 }
 
-.brand, .brand > div, .scenario-controls, .topbar-summary, .topbar-summary > div,
+.brand, .brand-copy, .scenario-controls, .topbar-summary, .topbar-summary > div,
 .select-control, .panel-heading, .layer-title-row, .weight-control, .map-toolbar,
 .map-legend, .section-label, .candidate-heading, .score-bar-row > div,
 .impact-list dt, .statusbar > div, .icon-text-button, .primary-button, .secondary-button {
@@ -55,17 +55,22 @@ button { color: inherit; }
 }
 
 .brand { gap: 11px; min-width: 0; }
-.brand > div { align-items: flex-start; flex-direction: column; min-width: 0; }
+.brand-copy { align-items: flex-start; flex-direction: column; min-width: 0; }
 .brand-mark {
   width: 38px;
   height: 38px;
   display: grid;
   place-items: center;
-  color: #fff;
-  background: var(--blue);
+  overflow: hidden;
+  background: #2f2824;
+  border: 2px solid #fff;
   border-radius: 6px;
+  box-shadow: 0 0 0 1px #9aa8ba;
   flex: 0 0 auto;
+  transition: box-shadow 140ms ease, transform 140ms ease;
 }
+.brand-mark:hover { box-shadow: 0 0 0 2px var(--blue); transform: translateY(-1px); }
+.brand-mark img { width: 100%; height: 100%; display: block; object-fit: cover; image-rendering: pixelated; }
 .brand h1 { margin: 0; font-size: 19px; line-height: 1.15; letter-spacing: 0; white-space: nowrap; }
 .brand p { margin: 3px 0 0; color: var(--muted); font-size: 11px; line-height: 1.2; }
 
