@@ -1,6 +1,6 @@
 import { CalendarDays, RotateCcw, ThermometerSun } from "lucide-react";
 
-const avatarSrc = `${import.meta.env.BASE_URL}avatar.png`;
+const avatarSrc = `${import.meta.env.BASE_URL}avatar.jpg`;
 
 export function TopBar({ scenario, onScenarioChange, time, onTimeChange, budget, placedCount, onReset }) {
   return (
