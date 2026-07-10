@@ -152,6 +152,34 @@ button { color: inherit; }
   line-height: 1.25;
 }
 .panel-heading p { margin: 4px 0 0; color: var(--muted); font-size: 11px; }
+.panel-heading .icon-button.is-active { color: var(--blue); background: #edf3ff; }
+
+.layer-guide {
+  margin: -2px 0 12px;
+  padding: 10px;
+  color: var(--text);
+  background: #f5f8fc;
+  border: 1px solid #cfd9e7;
+  border-radius: 6px;
+}
+.layer-guide header { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.layer-guide header span { color: var(--blue); font-size: 8px; font-weight: 800; text-transform: uppercase; }
+.layer-guide h3 { margin: 2px 0 0; font-size: 12px; line-height: 1.25; }
+.layer-guide dl { display: grid; gap: 7px; margin: 10px 0; }
+.layer-guide dl > div { display: grid; grid-template-columns: 48px minmax(0, 1fr); gap: 7px; }
+.layer-guide dt, .layer-guide dd { margin: 0; font-size: 9px; line-height: 1.35; }
+.layer-guide dt { color: var(--text); font-weight: 800; }
+.layer-guide dd { color: var(--muted); }
+.layer-guide p {
+  margin: 0;
+  padding: 7px;
+  color: #29415e;
+  background: #fff;
+  border-left: 3px solid var(--blue);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1.4;
+}
 
 .layer-list { display: grid; gap: 3px; }
 .layer-row {
