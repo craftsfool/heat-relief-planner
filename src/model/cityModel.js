@@ -43,6 +43,10 @@ export const LAYER_DEFINITIONS = [
 
 const clamp = (value, min = 0, max = 1) =>
   Math.min(max, Math.max(min, value));
+const CELL_HALF_DIAGONAL = Math.SQRT2 / 2;
+
+const distanceToCellArea = (a, b) =>
+  Math.max(0, Math.hypot(a.x - b.x, a.y - b.y) - CELL_HALF_DIAGONAL);
 
 export function buildCity(time = "afternoon", scenario = "baseline") {
   const heatTimeBoost = time === "afternoon" ? 0.16 : time === "morning" ? -0.05 : 0.04;
@@ -66,7 +70,7 @@ export function getStationCoverage(cell, placedStations = []) {
   return Math.max(
     ...placedStations.map((station) => {
       const radiusInCells = (station.radius ?? 150) / CELL_SIZE_METRES;
-      const distance = Math.hypot(station.x - cell.x, station.y - cell.y);
+      const distance = distanceToCellArea(station, cell);
       if (distance > radiusInCells) return 0;
       return clamp(1 - distance / radiusInCells);
     }),
@@ -133,7 +137,7 @@ export function getCellMetrics(cell, radius, cells) {
     (other) =>
       !other.outside &&
       !other.water &&
-      Math.hypot(other.x - cell.x, other.y - cell.y) <= radiusInCells,
+      distanceToCellArea(other, cell) <= radiusInCells,
   );
   const demand = covered.reduce(
     (sum, other) =>

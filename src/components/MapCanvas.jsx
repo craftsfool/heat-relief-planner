@@ -22,9 +22,20 @@ const facilityIcon = {
 };
 
 function CellOverlay({ cell, layers, weights, enabled, mode, activeLayer, placed }) {
-  if (mode === "base" || cell.outside) return null;
-  const visibleLayers = mode === "single" ? layers.filter((layer) => layer.id === activeLayer) : layers;
+  if (cell.outside) return null;
+  const visibleLayers = mode === "base"
+    ? []
+    : mode === "single"
+      ? layers.filter((layer) => layer.id === activeLayer)
+      : layers;
   const stationCoverage = getStationCoverage(cell, placed);
+  const maxCompositeWeight = Math.max(
+    0,
+    ...visibleLayers
+      .filter((layer) => enabled[layer.id])
+      .map((layer) => weights[layer.id]),
+  );
+  const remainingDemand = 1 - stationCoverage * 0.84;
 
   return (
     <span className="cell-overlays" aria-hidden="true">
@@ -32,20 +43,26 @@ function CellOverlay({ cell, layers, weights, enabled, mode, activeLayer, placed
         if (!enabled[layer.id]) return null;
         const intensity = cell[layer.id];
         const opacity = mode === "single"
-          ? Math.min(0.72, 0.06 + intensity * 0.64)
-          : Math.min(0.28, intensity * weights[layer.id] * 0.72);
+          ? Math.min(0.72, 0.08 + intensity * 0.64)
+          : maxCompositeWeight > 0 && weights[layer.id] > 0
+            ? Math.min(
+                0.34,
+                (0.04 + intensity * 0.26) *
+                  (0.55 + 0.45 * (weights[layer.id] / maxCompositeWeight)),
+              )
+            : 0;
         return (
           <span
             className="layer-fill"
             key={layer.id}
-            style={{ backgroundColor: layer.color, opacity }}
+            style={{ backgroundColor: layer.color, opacity: opacity * remainingDemand }}
           />
         );
       })}
       {stationCoverage > 0 && (
         <span
           className="service-reduction"
-          style={{ opacity: stationCoverage * 0.38 }}
+          style={{ opacity: stationCoverage * 0.72 }}
         />
       )}
     </span>
@@ -104,9 +121,13 @@ export function MapCanvas({
           maxScale={5}
           centerOnInit
           limitToBounds={false}
-          wheel={{ step: 0.16 }}
+          smooth={false}
+          wheel={{ step: 0.1, activationKeys: ["Control"] }}
           panning={{ velocityDisabled: true }}
-          doubleClick={{ mode: "zoomIn", step: 0.7 }}
+          doubleClick={{ mode: "zoomIn", step: 0.5, animationTime: 0 }}
+          zoomAnimation={{ disabled: true }}
+          autoAlignment={{ disabled: true }}
+          velocityAnimation={{ disabled: true }}
         >
           {({ zoomIn, zoomOut, centerView }) => (
             <>

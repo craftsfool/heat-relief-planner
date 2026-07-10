@@ -257,7 +257,7 @@ button { color: inherit; }
   cursor: grab;
 }
 .map-transform-wrapper:active { cursor: grabbing; }
-.map-transform-content { width: auto !important; height: auto !important; }
+.map-transform-content { width: auto !important; height: auto !important; will-change: transform; }
 .pixel-map {
   width: min(700px, calc(100vw - 60px));
   aspect-ratio: 20 / 14;
@@ -277,7 +277,7 @@ button { color: inherit; }
   display: grid;
   place-items: center;
   padding: 0;
-  overflow: visible;
+  overflow: hidden;
   border: 0;
   border-right: 1px solid rgba(255,255,255,.88);
   border-bottom: 1px solid rgba(255,255,255,.88);
@@ -304,10 +304,20 @@ button { color: inherit; }
   inset: 0;
   z-index: 2;
   pointer-events: none;
-  background: #2d6cdf;
-  mix-blend-mode: multiply;
+  background: #f4fff9;
+  box-shadow: inset 0 0 0 1px rgba(15, 128, 109, .2);
+  mix-blend-mode: screen;
 }
-.map-symbol { position: relative; z-index: 3; color: #26374e; filter: drop-shadow(0 1px 0 #fff); }
+.map-symbol {
+  position: relative;
+  z-index: 3;
+  width: 58%;
+  height: 58%;
+  max-width: 8px;
+  max-height: 8px;
+  color: #26374e;
+  filter: drop-shadow(0 1px 0 #fff);
+}
 .transit-symbol { color: #1955b7; }
 .facility-symbol { color: #44556c; }
 .candidate-marker, .station-marker {
@@ -317,11 +327,27 @@ button { color: inherit; }
   place-items: center;
   color: #fff;
   background: var(--blue);
-  border: 2px solid #fff;
-  box-shadow: 0 2px 6px rgba(16, 52, 117, 0.35);
+  border: 1px solid #fff;
+  box-shadow: 0 1px 3px rgba(16, 52, 117, 0.35);
 }
-.candidate-marker { width: 18px; height: 18px; border-radius: 4px; font-size: 9px; font-weight: 800; }
-.station-marker { width: 20px; height: 20px; border-radius: 50%; background: #0f806d; }
+.candidate-marker {
+  width: 76%;
+  height: 76%;
+  max-width: 11px;
+  max-height: 11px;
+  border-radius: 3px;
+  font-size: 7px;
+  font-weight: 800;
+}
+.station-marker {
+  width: 82%;
+  height: 82%;
+  max-width: 12px;
+  max-height: 12px;
+  border-radius: 50%;
+  background: #0f806d;
+}
+.station-marker svg { width: 65%; height: 65%; }
 .district-label, .coast-label {
   position: absolute;
   z-index: 6;
@@ -575,8 +601,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   .map-place-title { left: 50px; max-width: calc(100% - 62px); }
   .map-place-title span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .hover-readout { right: 8px; }
-  .candidate-marker, .station-marker { width: 18px; height: 18px; font-size: 9px; }
-  .map-symbol { width: 11px; height: 11px; }
+  .candidate-marker { font-size: 7px; }
   .inspector { display: block; border-top: 1px solid var(--border); }
   .statusbar { grid-template-columns: 1fr 1fr; padding: 10px 12px; }
 }
