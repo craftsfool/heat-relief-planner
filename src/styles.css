@@ -253,6 +253,7 @@ button { color: inherit; }
   background: #fff;
   border-bottom: 1px solid var(--border);
 }
+.map-toolbar-meta { display: flex; align-items: center; justify-content: flex-end; gap: 14px; }
 .segmented-control { display: inline-grid; grid-template-columns: repeat(3, auto); border: 1px solid #c8d0dc; border-radius: 6px; overflow: hidden; flex: 0 0 auto; }
 .segmented-control button {
   min-height: 35px;
@@ -271,6 +272,28 @@ button { color: inherit; }
 .legend-steps { display: flex; grid-column: 1 / -1; height: 8px; }
 .legend-steps i { width: 25px; background: #f15b5a; border-right: 1px solid rgba(255,255,255,.7); }
 .map-legend small:last-child { grid-column: 4; text-align: right; }
+.map-export-button {
+  min-width: 106px;
+  min-height: 35px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 11px;
+  color: #29415e;
+  background: #fff;
+  border: 1px solid #c8d0dc;
+  border-radius: 5px;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.map-export-button:hover:not(:disabled) { color: var(--blue); background: #f2f6fd; border-color: #9dafc6; }
+.map-export-button:disabled { cursor: wait; opacity: .72; }
+.map-export-button.is-done { color: #0f806d; border-color: rgba(15, 128, 109, .4); }
+.map-export-button.is-error { color: #b23a38; border-color: rgba(178, 58, 56, .4); }
+.is-spinning { animation: export-spin .8s linear infinite; }
+@keyframes export-spin { to { transform: rotate(360deg); } }
 
 .map-shell {
   min-height: 0;
@@ -285,7 +308,7 @@ button { color: inherit; }
   cursor: grab;
 }
 .map-transform-wrapper:active { cursor: grabbing; }
-.map-transform-content { width: auto !important; height: auto !important; will-change: transform; }
+.map-transform-content { width: auto !important; height: auto !important; position: relative; z-index: 1; will-change: transform; }
 .pixel-map {
   width: min(700px, calc(100vw - 60px));
   aspect-ratio: 20 / 14;
@@ -621,6 +644,8 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   .layer-title-row strong, .layer-title-row small, .data-quality-note { overflow-wrap: anywhere; }
   .weight-control input { min-width: 0; max-width: 100%; }
   .map-toolbar { align-items: stretch; flex-direction: column; }
+  .map-toolbar-meta { justify-content: space-between; gap: 10px; }
+  .map-export-button { flex: 0 0 auto; }
   .segmented-control { width: 100%; grid-template-columns: repeat(3, 1fr); }
   .segmented-control button { padding: 0 7px; }
   .map-legend { align-self: flex-start; }

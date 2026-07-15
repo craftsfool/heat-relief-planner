@@ -1,5 +1,8 @@
 import {
   Building2,
+  Check,
+  Download,
+  LoaderCircle,
   MapPin,
   Maximize2,
   TrainFront,
@@ -7,7 +10,9 @@ import {
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
+import { useRef, useState } from "react";
 import { TransformComponent, TransformWrapper } from "react-zoom-pan-pinch";
+import { toPng } from "html-to-image";
 import {
   getStationCoverage,
   GRID_COLS,
@@ -84,8 +89,40 @@ export function MapCanvas({
   onSelect,
   onHover,
 }) {
+  const mapShellRef = useRef(null);
+  const [exportStatus, setExportStatus] = useState("idle");
   const candidateIndex = new Map(candidates.map((candidate, index) => [candidate.id, index + 1]));
   const placedIds = new Set(placed.map((station) => station.id));
+
+  const exportVisibleMap = async () => {
+    if (!mapShellRef.current || exportStatus === "exporting") return;
+
+    setExportStatus("exporting");
+    try {
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      const node = mapShellRef.current;
+      const { width, height } = node.getBoundingClientRect();
+      const dataUrl = await toPng(node, {
+        backgroundColor: "#dfe8ef",
+        cacheBust: true,
+        width: Math.round(width),
+        height: Math.round(height),
+        pixelRatio: Math.max(1, window.devicePixelRatio || 1),
+        filter: (element) => element.dataset?.exportIgnore !== "true",
+        style: { cursor: "default" },
+      });
+      const link = document.createElement("a");
+      link.download = `queenstown-heat-relief-${new Date().toISOString().slice(0, 10)}.png`;
+      link.href = dataUrl;
+      link.click();
+      setExportStatus("done");
+    } catch (error) {
+      console.error("Unable to export the visible map", error);
+      setExportStatus("error");
+    } finally {
+      window.setTimeout(() => setExportStatus("idle"), 1800);
+    }
+  };
 
   return (
     <main className="map-workspace">
@@ -102,19 +139,39 @@ export function MapCanvas({
           </button>
         </div>
 
-        <div className="map-legend" aria-label="Score intensity legend">
-          <span>{mode === "single" ? layers.find((layer) => layer.id === activeLayer)?.label : "Layer intensity"}</span>
-          <div className="legend-steps">
-            {[0.16, 0.3, 0.44, 0.58, 0.72].map((opacity) => (
-              <i key={opacity} style={{ opacity }} />
-            ))}
+        <div className="map-toolbar-meta">
+          <div className="map-legend" aria-label="Score intensity legend">
+            <span>{mode === "single" ? layers.find((layer) => layer.id === activeLayer)?.label : "Layer intensity"}</span>
+            <div className="legend-steps">
+              {[0.16, 0.3, 0.44, 0.58, 0.72].map((opacity) => (
+                <i key={opacity} style={{ opacity }} />
+              ))}
+            </div>
+            <small>Low</small>
+            <small>High</small>
           </div>
-          <small>Low</small>
-          <small>High</small>
+          <button
+            className={`map-export-button is-${exportStatus}`}
+            data-testid="map-export-button"
+            type="button"
+            title="Export current visible map as a native-resolution PNG"
+            aria-label="Export current visible map as PNG"
+            disabled={exportStatus === "exporting"}
+            onClick={exportVisibleMap}
+          >
+            {exportStatus === "exporting" ? (
+              <LoaderCircle className="is-spinning" size={15} />
+            ) : exportStatus === "done" ? (
+              <Check size={15} />
+            ) : (
+              <Download size={15} />
+            )}
+            <span>{exportStatus === "exporting" ? "Exporting" : exportStatus === "done" ? "Saved" : exportStatus === "error" ? "Retry export" : "Export PNG"}</span>
+          </button>
         </div>
       </div>
 
-      <div className="map-shell">
+      <div className="map-shell" ref={mapShellRef}>
         <TransformWrapper
           initialScale={0.78}
           minScale={0.42}
@@ -131,7 +188,7 @@ export function MapCanvas({
         >
           {({ zoomIn, zoomOut, centerView }) => (
             <>
-              <div className="map-zoom-controls" aria-label="Map zoom controls">
+              <div className="map-zoom-controls" aria-label="Map zoom controls" data-export-ignore="true">
                 <button type="button" title="Zoom in" aria-label="Zoom in" onClick={() => zoomIn(0.35, 0)}>
                   <ZoomIn size={17} />
                 </button>
@@ -232,7 +289,7 @@ export function MapCanvas({
         </div>
 
         {hovered && !hovered.water && !hovered.outside && (
-          <div className="hover-readout">
+          <div className="hover-readout" data-export-ignore="true">
             <span>{hovered.lat.toFixed(4)}, {hovered.lon.toFixed(4)}</span>
             <strong>{hovered.zone}</strong>
           </div>
