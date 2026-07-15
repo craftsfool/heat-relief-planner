@@ -1,8 +1,20 @@
-import { CalendarDays, RotateCcw, ThermometerSun } from "lucide-react";
+import { CalendarDays, Dices, RotateCcw, Shuffle, ThermometerSun } from "lucide-react";
 
 const avatarSrc = `${import.meta.env.BASE_URL}avatar.jpg`;
 
-export function TopBar({ scenario, onScenarioChange, time, onTimeChange, budget, placedCount, onReset }) {
+export function TopBar({
+  scenario,
+  onScenarioChange,
+  time,
+  onTimeChange,
+  budget,
+  placedCount,
+  populationScore,
+  candidateCount,
+  onClear,
+  onNewChallenge,
+  onAiSolution,
+}) {
   return (
     <header className="topbar">
       <div className="brand">
@@ -16,7 +28,7 @@ export function TopBar({ scenario, onScenarioChange, time, onTimeChange, budget,
         </a>
         <div className="brand-copy">
           <h1>Heat Relief Planner</h1>
-          <p>Pixel-grid site selection</p>
+          <p>{candidateCount}-site strategy challenge</p>
         </div>
       </div>
 
@@ -47,12 +59,19 @@ export function TopBar({ scenario, onScenarioChange, time, onTimeChange, budget,
           <strong>${budget.toLocaleString()}</strong>
         </div>
         <div>
-          <span>Stations placed</span>
-          <strong>{placedCount}</strong>
+          <span>People reached</span>
+          <strong>{populationScore.toLocaleString()} · {placedCount} stations</strong>
         </div>
-        <button className="icon-text-button" type="button" onClick={onReset}>
+        <button className="icon-button topbar-icon-button" type="button" title="Clear current plan" aria-label="Clear current plan" onClick={onClear}>
           <RotateCcw size={16} />
-          Reset
+        </button>
+        <button className="icon-text-button ai-solution-button" type="button" title="Generate a random budget-maximal solution" onClick={onAiSolution}>
+          <Dices size={16} />
+          AI random
+        </button>
+        <button className="icon-text-button" type="button" title="Generate 12 new fixed candidate sites" onClick={onNewChallenge}>
+          <Shuffle size={16} />
+          New game
         </button>
       </div>
     </header>

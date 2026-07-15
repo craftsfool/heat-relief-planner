@@ -5,6 +5,7 @@ export const GRID_ROWS = queenstownGrid.metadata.rows;
 export const CELL_SIZE_METRES = queenstownGrid.metadata.cellSizeMetres;
 export const MAP_METADATA = queenstownGrid.metadata;
 export const MAP_LABELS = queenstownGrid.labels;
+export const STATION_RADII = [100, 150, 200, 250, 300];
 
 export const LAYER_DEFINITIONS = [
   {
@@ -47,6 +48,15 @@ const CELL_HALF_DIAGONAL = Math.SQRT2 / 2;
 
 const distanceToCellArea = (a, b) =>
   Math.max(0, Math.hypot(a.x - b.x, a.y - b.y) - CELL_HALF_DIAGONAL);
+
+const shuffled = (items, random = Math.random) => {
+  const copy = [...items];
+  for (let index = copy.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(random() * (index + 1));
+    [copy[index], copy[swapIndex]] = [copy[swapIndex], copy[index]];
+  }
+  return copy;
+};
 
 export function buildCity(time = "afternoon", scenario = "baseline") {
   const heatTimeBoost = time === "afternoon" ? 0.16 : time === "morning" ? -0.05 : 0.04;
@@ -109,29 +119,56 @@ export function scoreCell(cell, weights, enabledLayers, placedStations = []) {
   return Math.round(clamp(baseScore - 72 * stationCoverage, -100, 100));
 }
 
-export function rankCandidates(cells, weights, enabledLayers, placedStations = [], limit = 3) {
-  const placedIds = new Set(placedStations.map((station) => station.id));
-  const ranked = cells
-    .filter((cell) => cell.buildable && !placedIds.has(cell.id))
-    .map((cell) => ({
-      ...cell,
-      score: scoreCell(cell, weights, enabledLayers, placedStations),
-    }))
-    .sort((a, b) => b.score - a.score);
-
+export function selectChallengeSites(cells, count = 12, random = Math.random) {
+  const pool = shuffled(cells.filter((cell) => cell.buildable), random);
   const selected = [];
-  for (const cell of ranked) {
+
+  for (const cell of pool) {
     const separated = selected.every(
-      (candidate) => Math.hypot(candidate.x - cell.x, candidate.y - cell.y) >= 4,
+      (candidate) => Math.hypot(candidate.x - cell.x, candidate.y - cell.y) >= 2,
     );
     if (separated) selected.push(cell);
-    if (selected.length === limit) break;
+    if (selected.length === count) break;
   }
+
+  if (selected.length < count) {
+    const selectedIds = new Set(selected.map((cell) => cell.id));
+    selected.push(...pool.filter((cell) => !selectedIds.has(cell.id)).slice(0, count - selected.length));
+  }
+
   return selected;
 }
 
+export function rankChallengeSites(cells, siteIds, weights, enabledLayers) {
+  const cellById = new Map(cells.map((cell) => [cell.id, cell]));
+  return siteIds
+    .map((id) => cellById.get(id))
+    .filter(Boolean)
+    .map((cell) => ({
+      ...cell,
+      score: scoreCell(cell, weights, enabledLayers),
+    }))
+    .sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
+}
+
+export function estimateCellPopulation(cell) {
+  if (!cell || cell.outside || cell.water) return 0;
+  const densityIndex = 0.68 * cell.vulnerable + 0.32 * cell.flow;
+  return Math.round(35 + densityIndex * 720);
+}
+
+export function getPopulationReached(cells, placedStations = []) {
+  if (!placedStations.length) return 0;
+  return Math.round(
+    cells.reduce(
+      (sum, cell) => sum + estimateCellPopulation(cell) * getStationCoverage(cell, placedStations),
+      0,
+    ),
+  );
+}
+
 export function getCellMetrics(cell, radius, cells) {
-  if (!cell) return { cost: 0, protectedHours: 0, coveredCells: 0 };
+  if (!cell) return { cost: 0, protectedHours: 0, coveredCells: 0, peopleReached: 0 };
   const radiusInCells = radius / CELL_SIZE_METRES;
   const covered = cells.filter(
     (other) =>
@@ -151,5 +188,41 @@ export function getCellMetrics(cell, radius, cells) {
     cost,
     protectedHours: Math.round(demand * 240),
     coveredCells: covered.length,
+    peopleReached: getPopulationReached(cells, [{ ...cell, radius }]),
   };
+}
+
+export function generateRandomSolution(candidateCells, cells, budget, random = Math.random) {
+  const solution = [];
+  const remainingCandidates = shuffled(candidateCells, random);
+  let remainingBudget = budget;
+
+  const placeRandomAffordableStation = (cell) => {
+    const affordableRadii = STATION_RADII.filter(
+      (radius) => getCellMetrics(cell, radius, cells).cost <= remainingBudget,
+    );
+    if (!affordableRadii.length) return false;
+    const radius = affordableRadii[Math.floor(random() * affordableRadii.length)];
+    const { cost } = getCellMetrics(cell, radius, cells);
+    solution.push({ id: cell.id, x: cell.x, y: cell.y, radius, cost });
+    remainingBudget -= cost;
+    return true;
+  };
+
+  for (const cell of remainingCandidates) {
+    if (random() >= 0.48) placeRandomAffordableStation(cell);
+  }
+
+  while (true) {
+    const placedIds = new Set(solution.map((station) => station.id));
+    const affordable = remainingCandidates.filter(
+      (cell) =>
+        !placedIds.has(cell.id) &&
+        getCellMetrics(cell, STATION_RADII[0], cells).cost <= remainingBudget,
+    );
+    if (!affordable.length) break;
+    placeRandomAffordableStation(affordable[Math.floor(random() * affordable.length)]);
+  }
+
+  return solution;
 }

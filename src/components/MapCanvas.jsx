@@ -3,7 +3,6 @@ import {
   Check,
   Download,
   LoaderCircle,
-  MapPin,
   Maximize2,
   TrainFront,
   Trees,
@@ -202,7 +201,7 @@ export function MapCanvas({
 
               <div className="map-place-title">
                 <strong>Queenstown</strong>
-                <span>{MAP_METADATA.cellSizeMetres} m GIS grid</span>
+                <span>{MAP_METADATA.cellSizeMetres} m GIS grid · {candidates.length} fixed sites</span>
               </div>
 
               <TransformComponent
@@ -221,6 +220,8 @@ export function MapCanvas({
                     const FacilityIcon = cell.facility ? facilityIcon[cell.facility.kind] : null;
                     const isSelected = selected?.id === cell.id;
                     const isHovered = hovered?.id === cell.id;
+                    const candidateRank = candidateIndex.get(cell.id);
+                    const isCandidate = candidateRank !== undefined;
                     return (
                       <button
                         type="button"
@@ -231,15 +232,16 @@ export function MapCanvas({
                           cell.park ? "is-park" : "",
                           cell.road === "major" ? "is-road is-road-major" : "",
                           cell.road === "minor" ? "is-road is-road-minor" : "",
+                          isCandidate ? "is-challenge-site" : "is-game-locked",
                           isSelected ? "is-selected" : "",
                           isHovered ? "is-hovered" : "",
                         ].join(" ")}
                         key={cell.id}
-                        aria-label={`Cell ${cell.x + 1}, ${cell.y + 1}, ${cell.zone}`}
-                        tabIndex={cell.outside ? -1 : 0}
+                        aria-label={`Cell ${cell.x + 1}, ${cell.y + 1}, ${cell.zone}${isCandidate ? `, priority ${candidateRank}` : ", locked for this challenge"}`}
+                        tabIndex={isCandidate ? 0 : -1}
                         onMouseEnter={() => !cell.outside && onHover(cell)}
-                        onFocus={() => !cell.outside && onHover(cell)}
-                        onClick={() => !cell.outside && !cell.water && onSelect(cell)}
+                        onFocus={() => isCandidate && onHover(cell)}
+                        onClick={() => isCandidate && onSelect(cell)}
                       >
                         <CellOverlay
                           cell={cell}
@@ -252,12 +254,12 @@ export function MapCanvas({
                         />
                         {cell.transit && <TrainFront className="map-symbol transit-symbol" size={13} aria-label={cell.transit.label} />}
                         {FacilityIcon && <FacilityIcon className="map-symbol facility-symbol" size={11} aria-label={cell.facility.label} />}
-                        {candidateIndex.has(cell.id) && !placedIds.has(cell.id) && (
-                          <span className="candidate-marker">{candidateIndex.get(cell.id)}</span>
+                        {isCandidate && !placedIds.has(cell.id) && (
+                          <span className={`candidate-marker ${candidateRank >= 10 ? "is-double-digit" : ""}`}>{candidateRank}</span>
                         )}
                         {placedIds.has(cell.id) && (
-                          <span className="station-marker" title="Placed heat-relief station">
-                            <MapPin size={12} fill="currentColor" />
+                          <span className={`station-marker ${candidateRank >= 10 ? "is-double-digit" : ""}`} title={`Placed station at priority ${candidateRank}`}>
+                            {candidateRank}
                           </span>
                         )}
                       </button>

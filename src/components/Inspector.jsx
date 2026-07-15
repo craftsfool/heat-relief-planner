@@ -1,4 +1,4 @@
-import { Bookmark, Check, CircleDollarSign, Info, MapPin, Minus, Plus, Users } from "lucide-react";
+import { Check, CircleDollarSign, Info, MapPin, Minus, Plus, Trash2, Users } from "lucide-react";
 
 export function Inspector({
   cell,
@@ -11,11 +11,14 @@ export function Inspector({
   radius,
   metrics,
   budget,
+  candidateRank,
+  isCandidate,
   isPlaced,
-  isShortlisted,
+  populationImpact,
+  maxAffordableRadius,
   onRadius,
   onPlace,
-  onShortlist,
+  onRemove,
 }) {
   if (!cell) {
     return (
@@ -35,15 +38,16 @@ export function Inspector({
     <aside className="inspector" aria-label="Selected site details">
       <div className="candidate-heading">
         <div>
-          <span>Selected site</span>
-          <h2>Cell {cell.x + 1}, {cell.y + 1}</h2>
+          <span>Challenge site</span>
+          <h2>{isCandidate ? `Priority #${candidateRank}` : "Locked location"}</h2>
         </div>
-        <span className={`eligibility ${cell.buildable ? "is-buildable" : ""}`}>
-          {cell.buildable ? "Buildable" : "Unavailable"}
+        <span className={`eligibility ${isCandidate ? "is-buildable" : ""}`}>
+          {isCandidate ? "Candidate" : "Unavailable"}
         </span>
       </div>
 
       <dl className="location-list">
+        <div><dt>Grid cell</dt><dd>{cell.x + 1}, {cell.y + 1}</dd></div>
         <div><dt>Zone</dt><dd>{cell.zone}</dd></div>
         <div><dt>Coordinates</dt><dd>{cell.lat.toFixed(4)}, {cell.lon.toFixed(4)}</dd></div>
       </dl>
@@ -118,8 +122,8 @@ export function Inspector({
               type="button"
               title="Increase coverage radius"
               aria-label="Increase coverage radius"
-              disabled={radius >= 300}
-              onClick={() => onRadius(Math.min(300, radius + 50))}
+              disabled={radius >= 300 || (isPlaced && radius >= maxAffordableRadius)}
+              onClick={() => onRadius(Math.min(isPlaced ? maxAffordableRadius : 300, radius + 50))}
             >
               <Plus size={14} />
             </button>
@@ -128,7 +132,7 @@ export function Inspector({
         <input
           type="range"
           min="100"
-          max="300"
+          max={isPlaced ? maxAffordableRadius : 300}
           step="50"
           value={radius}
           title="Adjust coverage radius"
@@ -144,23 +148,25 @@ export function Inspector({
             <dd>${metrics.cost.toLocaleString()}</dd>
           </div>
           <div>
-            <dt><Users size={15} /> Protected hours</dt>
-            <dd>{metrics.protectedHours.toLocaleString()} / day</dd>
+            <dt><Users size={15} /> Score impact</dt>
+            <dd>+{populationImpact.toLocaleString()} people</dd>
           </div>
         </dl>
         <button
           className="primary-button"
           type="button"
-          disabled={!cell.buildable || isPlaced || budget < metrics.cost}
+          disabled={!isCandidate || isPlaced || budget < metrics.cost}
           onClick={onPlace}
         >
           {isPlaced ? <Check size={18} /> : <MapPin size={18} />}
-          {isPlaced ? "Station placed" : budget < metrics.cost ? "Over budget" : "Place station here"}
+          {!isCandidate ? "Not a challenge site" : isPlaced ? "Station placed" : budget < metrics.cost ? "Over budget" : "Place station here"}
         </button>
-        <button className={`secondary-button ${isShortlisted ? "is-active" : ""}`} type="button" onClick={onShortlist}>
-          <Bookmark size={17} fill={isShortlisted ? "currentColor" : "none"} />
-          {isShortlisted ? "Shortlisted" : "Add to shortlist"}
-        </button>
+        {isPlaced && (
+          <button className="secondary-button remove-station-button" type="button" onClick={onRemove}>
+            <Trash2 size={17} />
+            Remove station
+          </button>
+        )}
       </div>
     </aside>
   );

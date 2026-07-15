@@ -6,14 +6,19 @@ import { StatusBar } from "./components/StatusBar";
 import { TopBar } from "./components/TopBar";
 import {
   LAYER_DEFINITIONS,
+  STATION_RADII,
   buildCity,
+  generateRandomSolution,
   getCellMetrics,
+  getPopulationReached,
   getStationCoverage,
-  rankCandidates,
+  rankChallengeSites,
   scoreCell,
+  selectChallengeSites,
 } from "./model/cityModel";
 
 const STARTING_BUDGET = 2_500_000;
+const CHALLENGE_SITE_COUNT = 12;
 
 const initialWeights = Object.fromEntries(
   LAYER_DEFINITIONS.map((layer) => [layer.id, layer.defaultWeight]),
@@ -33,14 +38,20 @@ export default function App() {
   const [hovered, setHovered] = useState(null);
   const [radius, setRadius] = useState(150);
   const [placed, setPlaced] = useState([]);
-  const [shortlist, setShortlist] = useState([]);
+  const [challengeIds, setChallengeIds] = useState(() =>
+    selectChallengeSites(buildCity("afternoon", "baseline"), CHALLENGE_SITE_COUNT)
+      .map((cell) => cell.id),
+  );
 
   const cells = useMemo(() => buildCity(time, scenario), [time, scenario]);
   const candidates = useMemo(
-    () => rankCandidates(cells, weights, enabled, placed),
-    [cells, weights, enabled, placed],
+    () => rankChallengeSites(cells, challengeIds, weights, enabled),
+    [cells, challengeIds, weights, enabled],
   );
+  const challengeIdSet = useMemo(() => new Set(challengeIds), [challengeIds]);
   const selected = cells.find((cell) => cell.id === selectedId) ?? candidates[0] ?? null;
+  const candidateRank = candidates.findIndex((candidate) => candidate.id === selected?.id) + 1;
+  const isCandidate = candidateRank > 0;
   const selectedBaseScore = selected ? scoreCell(selected, weights, enabled) : 0;
   const selectedScore = selected ? scoreCell(selected, weights, enabled, placed) : 0;
   const serviceReduction = selectedBaseScore - selectedScore;
@@ -57,24 +68,66 @@ export default function App() {
   const spent = placed.reduce((sum, station) => sum + station.cost, 0);
   const budget = STARTING_BUDGET - spent;
   const isPlaced = placed.some((station) => station.id === selected?.id);
-  const isShortlisted = shortlist.includes(selected?.id);
+  const populationScore = useMemo(
+    () => getPopulationReached(cells, placed),
+    [cells, placed],
+  );
+  const placedIds = useMemo(() => new Set(placed.map((station) => station.id)), [placed]);
+  const cheapestRemainingCost = candidates.reduce((minimum, candidate) => {
+    if (placedIds.has(candidate.id)) return minimum;
+    return Math.min(minimum, getCellMetrics(candidate, STATION_RADII[0], cells).cost);
+  }, Number.POSITIVE_INFINITY);
+  const budgetLocked = budget < cheapestRemainingCost;
+  const populationImpact = useMemo(() => {
+    if (!selected || !isCandidate) return 0;
+    if (selectedStation) {
+      const withoutSelected = placed.filter((station) => station.id !== selectedStation.id);
+      return populationScore - getPopulationReached(cells, withoutSelected);
+    }
+    const proposedStation = {
+      id: selected.id,
+      x: selected.x,
+      y: selected.y,
+      radius: effectiveRadius,
+      cost: metrics.cost,
+    };
+    return getPopulationReached(cells, [...placed, proposedStation]) - populationScore;
+  }, [cells, effectiveRadius, isCandidate, metrics.cost, placed, populationScore, selected, selectedStation]);
+  const maxAffordableRadius = selected
+    ? STATION_RADII.filter((option) => {
+        const optionCost = getCellMetrics(selected, option, cells).cost;
+        const available = selectedStation ? budget + selectedStation.cost : budget;
+        return optionCost <= available;
+      }).at(-1) ?? STATION_RADII[0]
+    : STATION_RADII[0];
 
-  const reset = () => {
-    setScenario("baseline");
-    setTime("afternoon");
-    setWeights(initialWeights);
-    setEnabled(initialEnabled);
-    setMode("composite");
-    setActiveLayer("heat");
-    setSelectedId(null);
+  const clearPlan = () => {
+    setSelectedId(candidates[0]?.id ?? null);
     setHovered(null);
     setRadius(150);
     setPlaced([]);
-    setShortlist([]);
+  };
+
+  const newChallenge = () => {
+    const nextCandidates = selectChallengeSites(cells, CHALLENGE_SITE_COUNT);
+    const nextIds = nextCandidates.map((cell) => cell.id);
+    const rankedNext = rankChallengeSites(cells, nextIds, weights, enabled);
+    setChallengeIds(nextIds);
+    setSelectedId(rankedNext[0]?.id ?? null);
+    setHovered(null);
+    setRadius(150);
+    setPlaced([]);
+  };
+
+  const applyRandomSolution = () => {
+    const solution = generateRandomSolution(candidates, cells, STARTING_BUDGET);
+    setPlaced(solution);
+    setSelectedId(solution[0]?.id ?? candidates[0]?.id ?? null);
+    setRadius(solution[0]?.radius ?? 150);
   };
 
   const placeStation = () => {
-    if (!selected?.buildable || isPlaced || budget < metrics.cost) return;
+    if (!selected?.buildable || !isCandidate || isPlaced || budget < metrics.cost) return;
     setSelectedId(selected.id);
     setPlaced((current) => [
       ...current,
@@ -88,22 +141,22 @@ export default function App() {
     ]);
   };
 
-  const toggleShortlist = () => {
-    if (!selected) return;
-    setShortlist((current) =>
-      current.includes(selected.id)
-        ? current.filter((id) => id !== selected.id)
-        : [...current, selected.id],
-    );
+  const removeStation = () => {
+    if (!selectedStation) return;
+    setPlaced((current) => current.filter((station) => station.id !== selectedStation.id));
   };
 
   const changeRadius = (value) => {
-    setRadius(value);
-    if (!selectedStation) return;
+    if (!selectedStation) {
+      setRadius(value);
+      return;
+    }
+    const nextMetrics = getCellMetrics(selected, value, cells);
+    if (spent - selectedStation.cost + nextMetrics.cost > STARTING_BUDGET) return;
     setPlaced((current) =>
       current.map((station) =>
         station.id === selectedStation.id
-          ? { ...station, radius: value }
+          ? { ...station, radius: value, cost: nextMetrics.cost }
           : station,
       ),
     );
@@ -118,7 +171,11 @@ export default function App() {
         onTimeChange={setTime}
         budget={budget}
         placedCount={placed.length}
-        onReset={reset}
+        populationScore={populationScore}
+        candidateCount={candidates.length}
+        onClear={clearPlan}
+        onNewChallenge={newChallenge}
+        onAiSolution={applyRandomSolution}
       />
       <div className="workspace">
         <LayerPanel
@@ -145,7 +202,7 @@ export default function App() {
           hovered={hovered}
           placed={placed}
           onMode={setMode}
-          onSelect={(cell) => setSelectedId(cell.id)}
+          onSelect={(cell) => challengeIdSet.has(cell.id) && setSelectedId(cell.id)}
           onHover={setHovered}
         />
         <Inspector
@@ -159,11 +216,14 @@ export default function App() {
           radius={effectiveRadius}
           metrics={metrics}
           budget={budget}
+          candidateRank={candidateRank}
+          isCandidate={isCandidate}
           isPlaced={isPlaced}
-          isShortlisted={isShortlisted}
+          populationImpact={populationImpact}
+          maxAffordableRadius={maxAffordableRadius}
           onRadius={changeRadius}
           onPlace={placeStation}
-          onShortlist={toggleShortlist}
+          onRemove={removeStation}
         />
       </div>
       <StatusBar
@@ -171,6 +231,10 @@ export default function App() {
         score={selectedScore}
         budget={budget}
         placedCount={placed.length}
+        populationScore={populationScore}
+        candidateRank={candidateRank}
+        candidateCount={candidates.length}
+        budgetLocked={budgetLocked}
       />
     </div>
   );
