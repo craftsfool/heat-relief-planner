@@ -163,6 +163,43 @@ button { color: inherit; }
 .panel-heading p { margin: 4px 0 0; color: var(--muted); font-size: 11px; }
 .panel-heading .icon-button.is-active { color: var(--blue); background: #edf3ff; }
 
+.candidate-count-control {
+  margin: 0 0 8px;
+  padding: 9px 8px 10px;
+  border-top: 1px solid #e3e8ef;
+  border-bottom: 1px solid #e3e8ef;
+}
+.candidate-count-control > div:first-child { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.candidate-count-control label { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 800; }
+.candidate-count-control label svg { color: var(--blue); }
+.candidate-count-stepper { display: flex; align-items: center; gap: 3px; }
+.candidate-count-stepper button {
+  width: 23px;
+  height: 23px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  color: var(--blue);
+  background: #fff;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.candidate-count-stepper button:hover:not(:disabled) { background: #edf3ff; border-color: #9fb8ef; }
+.candidate-count-stepper button:disabled { color: #aeb8c5; background: #f5f7fa; cursor: not-allowed; }
+.candidate-count-control output {
+  min-width: 30px;
+  padding: 3px 5px;
+  color: var(--blue);
+  background: #edf3ff;
+  border: 1px solid #cbd9f7;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 800;
+  text-align: center;
+}
+.candidate-count-control input { width: 100%; margin: 9px 0 2px; accent-color: var(--blue); cursor: pointer; }
+
 .layer-guide {
   margin: -2px 0 12px;
   padding: 10px;

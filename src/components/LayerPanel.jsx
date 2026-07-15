@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { Eye, EyeOff, Info, X } from "lucide-react";
+import { Eye, EyeOff, Info, MapPinned, Minus, Plus, X } from "lucide-react";
 
-export function LayerPanel({ layers, weights, enabled, activeLayer, onToggle, onWeight, onSelect }) {
+export function LayerPanel({ layers, candidateCount, weights, enabled, activeLayer, onToggle, onCandidateCount, onWeight, onSelect }) {
   const weightTotal = Object.values(weights).reduce((sum, value) => sum + value, 0);
   const [isGuideOpen, setIsGuideOpen] = useState(false);
 
@@ -60,6 +60,43 @@ export function LayerPanel({ layers, weights, enabled, activeLayer, onToggle, on
           <p>Priority = normalized demand - cooling penalty - station coverage</p>
         </section>
       )}
+
+      <section className="candidate-count-control" aria-label="Candidate site count">
+        <div>
+          <label htmlFor="candidate-count"><MapPinned size={15} /> Candidate sites</label>
+          <div className="candidate-count-stepper">
+            <button
+              type="button"
+              title="Decrease candidate sites"
+              aria-label="Decrease candidate sites"
+              disabled={candidateCount <= 6}
+              onClick={() => onCandidateCount(candidateCount - 1)}
+            >
+              <Minus size={12} />
+            </button>
+            <output htmlFor="candidate-count">{candidateCount}</output>
+            <button
+              type="button"
+              title="Increase candidate sites"
+              aria-label="Increase candidate sites"
+              disabled={candidateCount >= 20}
+              onClick={() => onCandidateCount(candidateCount + 1)}
+            >
+              <Plus size={12} />
+            </button>
+          </div>
+        </div>
+        <input
+          id="candidate-count"
+          type="range"
+          min="6"
+          max="20"
+          step="1"
+          value={candidateCount}
+          onChange={(event) => onCandidateCount(Number(event.target.value))}
+        />
+        <div className="range-labels"><span>6</span><span>20</span></div>
+      </section>
 
       <div className="layer-list">
         {layers.map((layer) => (

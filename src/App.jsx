@@ -18,7 +18,7 @@ import {
 } from "./model/cityModel";
 
 const STARTING_BUDGET = 2_500_000;
-const CHALLENGE_SITE_COUNT = 12;
+const DEFAULT_CANDIDATE_COUNT = 12;
 
 const initialWeights = Object.fromEntries(
   LAYER_DEFINITIONS.map((layer) => [layer.id, layer.defaultWeight]),
@@ -38,8 +38,9 @@ export default function App() {
   const [hovered, setHovered] = useState(null);
   const [radius, setRadius] = useState(150);
   const [placed, setPlaced] = useState([]);
+  const [candidateCount, setCandidateCount] = useState(DEFAULT_CANDIDATE_COUNT);
   const [challengeIds, setChallengeIds] = useState(() =>
-    selectChallengeSites(buildCity("afternoon", "baseline"), CHALLENGE_SITE_COUNT)
+    selectChallengeSites(buildCity("afternoon", "baseline"), DEFAULT_CANDIDATE_COUNT)
       .map((cell) => cell.id),
   );
 
@@ -108,8 +109,8 @@ export default function App() {
     setPlaced([]);
   };
 
-  const newChallenge = () => {
-    const nextCandidates = selectChallengeSites(cells, CHALLENGE_SITE_COUNT);
+  const startChallenge = (count) => {
+    const nextCandidates = selectChallengeSites(cells, count);
     const nextIds = nextCandidates.map((cell) => cell.id);
     const rankedNext = rankChallengeSites(cells, nextIds, weights, enabled);
     setChallengeIds(nextIds);
@@ -117,6 +118,13 @@ export default function App() {
     setHovered(null);
     setRadius(150);
     setPlaced([]);
+  };
+
+  const newChallenge = () => startChallenge(candidateCount);
+
+  const changeCandidateCount = (count) => {
+    setCandidateCount(count);
+    startChallenge(count);
   };
 
   const applyRandomSolution = () => {
@@ -180,10 +188,12 @@ export default function App() {
       <div className="workspace">
         <LayerPanel
           layers={LAYER_DEFINITIONS}
+          candidateCount={candidateCount}
           weights={weights}
           enabled={enabled}
           activeLayer={activeLayer}
           onToggle={(id) => setEnabled((current) => ({ ...current, [id]: !current[id] }))}
+          onCandidateCount={changeCandidateCount}
           onWeight={(id, value) => setWeights((current) => ({ ...current, [id]: value }))}
           onSelect={(id) => {
             setActiveLayer(id);

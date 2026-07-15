@@ -69,7 +69,7 @@ export function TopBar({
           <Dices size={16} />
           AI random
         </button>
-        <button className="icon-text-button" type="button" title="Generate 12 new fixed candidate sites" onClick={onNewChallenge}>
+        <button className="icon-text-button" type="button" title={`Generate ${candidateCount} new fixed candidate sites`} onClick={onNewChallenge}>
           <Shuffle size={16} />
           New game
         </button>
