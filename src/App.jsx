@@ -16,6 +16,7 @@ import {
   scoreCell,
   selectChallengeSites,
 } from "./model/cityModel";
+import { generateOptimalSolution } from "./model/optimalSolution";
 
 const STARTING_BUDGET = 2_500_000;
 const DEFAULT_CANDIDATE_COUNT = 12;
@@ -134,6 +135,14 @@ export default function App() {
     setRadius(solution[0]?.radius ?? 150);
   };
 
+  const applyOptimalSolution = async () => {
+    const solution = await generateOptimalSolution(candidates, cells, STARTING_BUDGET);
+    setPlaced(solution);
+    setSelectedId(solution[0]?.id ?? candidates[0]?.id ?? null);
+    setRadius(solution[0]?.radius ?? 150);
+    return solution;
+  };
+
   const placeStation = () => {
     if (!selected?.buildable || !isCandidate || isPlaced || budget < metrics.cost) return;
     setSelectedId(selected.id);
@@ -184,6 +193,7 @@ export default function App() {
         onClear={clearPlan}
         onNewChallenge={newChallenge}
         onAiSolution={applyRandomSolution}
+        onOptimalSolution={applyOptimalSolution}
       />
       <div className="workspace">
         <LayerPanel
