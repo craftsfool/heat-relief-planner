@@ -1,8 +1,7 @@
-import { CalendarDays, Check, Dices, LoaderCircle, RotateCcw, Shuffle, Target, ThermometerSun } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { CalendarDays, Dices, Earth, RotateCcw, Shuffle, Target, ThermometerSun } from "lucide-react";
+import { HoldActionButton } from "./HoldActionButton";
 
 const avatarSrc = `${import.meta.env.BASE_URL}avatar.jpg`;
-const OPTIMAL_HOLD_MS = 700;
 
 export function TopBar({
   scenario,
@@ -15,88 +14,10 @@ export function TopBar({
   candidateCount,
   onClear,
   onNewChallenge,
+  onGlobalSolution,
   onAiSolution,
   onOptimalSolution,
 }) {
-  const [aiState, setAiState] = useState("idle");
-  const holdTimer = useRef(null);
-  const feedbackTimer = useRef(null);
-  const suppressClick = useRef(false);
-
-  useEffect(() => () => {
-    window.clearTimeout(holdTimer.current);
-    window.clearTimeout(feedbackTimer.current);
-  }, []);
-
-  const cancelHold = () => {
-    window.clearTimeout(holdTimer.current);
-    holdTimer.current = null;
-    setAiState((current) => current === "holding" ? "idle" : current);
-  };
-
-  const runOptimalSolution = async () => {
-    setAiState("solving");
-    try {
-      await onOptimalSolution();
-      setAiState("complete");
-      feedbackTimer.current = window.setTimeout(() => setAiState("idle"), 1800);
-    } catch (error) {
-      console.error(error);
-      setAiState("error");
-      feedbackTimer.current = window.setTimeout(() => setAiState("idle"), 2200);
-    }
-  };
-
-  const startHold = (event) => {
-    if (aiState === "solving") return;
-    window.clearTimeout(feedbackTimer.current);
-    suppressClick.current = false;
-    event.currentTarget.setPointerCapture?.(event.pointerId);
-    setAiState("holding");
-    holdTimer.current = window.setTimeout(() => {
-      suppressClick.current = true;
-      runOptimalSolution();
-    }, OPTIMAL_HOLD_MS);
-  };
-
-  const handleAiClick = (event) => {
-    if (suppressClick.current) {
-      suppressClick.current = false;
-      return;
-    }
-    if (event.shiftKey && aiState !== "solving") {
-      runOptimalSolution();
-      return;
-    }
-    if (aiState !== "solving") {
-      window.clearTimeout(feedbackTimer.current);
-      setAiState("idle");
-      onAiSolution();
-    }
-  };
-
-  const cancelPointerHold = () => {
-    cancelHold();
-    suppressClick.current = false;
-  };
-
-  const aiLabel = aiState === "holding"
-    ? "Hold for optimal"
-    : aiState === "solving"
-      ? "Solving optimal"
-      : aiState === "complete"
-        ? "Optimal ready"
-        : aiState === "error"
-          ? "Solver failed"
-          : "AI random";
-  const AiIcon = aiState === "holding"
-    ? Target
-    : aiState === "solving"
-      ? LoaderCircle
-      : aiState === "complete"
-        ? Check
-        : Dices;
-
   return (
     <header className="topbar">
       <div className="brand">
@@ -147,25 +68,34 @@ export function TopBar({
         <button className="icon-button topbar-icon-button" type="button" title="Clear current plan" aria-label="Clear current plan" onClick={onClear}>
           <RotateCcw size={16} />
         </button>
-        <button
-          className={`icon-text-button ai-solution-button is-${aiState}`}
-          type="button"
+        <HoldActionButton
+          className="ai-solution-button"
+          idleIcon={Dices}
+          holdIcon={Target}
+          idleLabel="AI random"
+          holdLabel="Hold for optimal"
+          workingLabel="Solving optimal"
+          completeLabel="Optimal ready"
+          errorLabel="Solver failed"
           title="Click for a random solution. Press and hold, or Shift-click, for the optimal solution."
-          aria-label="AI random. Press and hold, or Shift-click, for the optimal solution."
-          disabled={aiState === "solving"}
-          onPointerDown={startHold}
-          onPointerUp={cancelHold}
-          onPointerCancel={cancelPointerHold}
-          onContextMenu={(event) => event.preventDefault()}
-          onClick={handleAiClick}
-        >
-          <AiIcon className={aiState === "solving" ? "spin" : ""} size={16} />
-          {aiLabel}
-        </button>
-        <button className="icon-text-button" type="button" title={`Generate ${candidateCount} new fixed candidate sites`} onClick={onNewChallenge}>
-          <Shuffle size={16} />
-          New game
-        </button>
+          ariaLabel="AI random. Press and hold, or Shift-click, for the optimal solution."
+          onClick={onAiSolution}
+          onHold={onOptimalSolution}
+        />
+        <HoldActionButton
+          className="new-game-button"
+          idleIcon={Shuffle}
+          holdIcon={Earth}
+          idleLabel="New game"
+          holdLabel="Hold for global"
+          workingLabel="Global search"
+          completeLabel="Global ready"
+          errorLabel="Search failed"
+          title={`Click for ${candidateCount} new fixed sites. Press and hold, or Shift-click, for the global optimal solution.`}
+          ariaLabel="New game. Press and hold, or Shift-click, for the global optimal solution."
+          onClick={onNewChallenge}
+          onHold={onGlobalSolution}
+        />
       </div>
     </header>
   );

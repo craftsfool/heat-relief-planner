@@ -143,6 +143,27 @@ export default function App() {
     return solution;
   };
 
+  const applyGlobalOptimalSolution = async () => {
+    const buildableCells = cells.filter((cell) => cell.buildable);
+    const solution = await generateOptimalSolution(
+      buildableCells,
+      cells,
+      STARTING_BUDGET,
+      { timeLimit: 60 },
+    );
+    const solutionIds = solution.map((station) => station.id);
+    const rankedSolution = rankChallengeSites(cells, solutionIds, weights, enabled);
+    setChallengeIds(solutionIds);
+    setCandidateCount(solution.length);
+    setPlaced(solution);
+    setSelectedId(rankedSolution[0]?.id ?? null);
+    setHovered(null);
+    setRadius(rankedSolution[0]
+      ? solution.find((station) => station.id === rankedSolution[0].id)?.radius ?? 150
+      : 150);
+    return solution;
+  };
+
   const placeStation = () => {
     if (!selected?.buildable || !isCandidate || isPlaced || budget < metrics.cost) return;
     setSelectedId(selected.id);
@@ -192,6 +213,7 @@ export default function App() {
         candidateCount={candidates.length}
         onClear={clearPlan}
         onNewChallenge={newChallenge}
+        onGlobalSolution={applyGlobalOptimalSolution}
         onAiSolution={applyRandomSolution}
         onOptimalSolution={applyOptimalSolution}
       />

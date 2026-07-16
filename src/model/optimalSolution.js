@@ -5,7 +5,9 @@ import {
   getStationCoverage,
 } from "./cityModel";
 
-let solverPromise;
+let solverWorker;
+let nextRequestId = 1;
+const pendingRequests = new Map();
 
 const formatCoefficient = (value) => Number(value.toFixed(6));
 
@@ -17,22 +19,31 @@ const wrapTerms = (terms, indent = "  ", termsPerLine = 6) => {
   return lines;
 };
 
-const loadSolver = () => {
-  if (!solverPromise) {
-    solverPromise = Promise.all([
-      import("highs"),
-      import("highs/runtime?url"),
-    ]).then(([highsModule, runtimeModule]) => {
-      const createHighs = highsModule.default ?? highsModule;
-      return createHighs({
-        locateFile: () => runtimeModule.default,
-        print: () => {},
-        printErr: () => {},
-      });
-    });
+const getSolverWorker = () => {
+  if (!solverWorker) {
+    solverWorker = new Worker(new URL("../workers/optimalSolver.worker.js", import.meta.url), { type: "module" });
+    solverWorker.onmessage = ({ data }) => {
+      const request = pendingRequests.get(data.id);
+      if (!request) return;
+      pendingRequests.delete(data.id);
+      if (data.error) request.reject(new Error(data.error));
+      else request.resolve(data);
+    };
+    solverWorker.onerror = (event) => {
+      pendingRequests.forEach(({ reject }) => reject(new Error(event.message || "Optimal solver worker failed")));
+      pendingRequests.clear();
+      solverWorker = null;
+    };
   }
-  return solverPromise;
+  return solverWorker;
 };
+
+const solveInWorker = (model, stationVariables, timeLimit) => new Promise((resolve, reject) => {
+  const id = nextRequestId;
+  nextRequestId += 1;
+  pendingRequests.set(id, { resolve, reject });
+  getSolverWorker().postMessage({ id, model, stationVariables, timeLimit });
+});
 
 export function buildOptimalProblem(candidateCells, cells, budget) {
   const demandCells = cells
@@ -91,23 +102,20 @@ export function buildOptimalProblem(candidateCells, cells, budget) {
   return { model: lines.join("\n"), stationOptions };
 }
 
-export async function generateOptimalSolution(candidateCells, cells, budget) {
-  const [{ model, stationOptions }, solver] = await Promise.all([
-    Promise.resolve(buildOptimalProblem(candidateCells, cells, budget)),
-    loadSolver(),
-  ]);
-  const result = solver.solve(model, {
-    mip_rel_gap: 0,
-    output_flag: false,
-    time_limit: 20,
-  });
+export async function generateOptimalSolution(candidateCells, cells, budget, { timeLimit = 20 } = {}) {
+  const { model, stationOptions } = buildOptimalProblem(candidateCells, cells, budget);
+  const result = await solveInWorker(
+    model,
+    stationOptions.map(({ variable }) => variable),
+    timeLimit,
+  );
 
-  if (result.Status !== "Optimal") {
-    throw new Error(`Optimal solver stopped with status: ${result.Status}`);
+  if (result.status !== "Optimal") {
+    throw new Error(`Optimal solver stopped with status: ${result.status}`);
   }
 
   return stationOptions
-    .filter(({ variable }) => result.Columns[variable]?.Primal > 0.5)
+    .filter(({ variable }) => result.selectedVariables.includes(variable))
     .map(({ candidate, radius, cost }) => ({
       id: candidate.id,
       x: candidate.x,
