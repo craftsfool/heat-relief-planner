@@ -17,6 +17,7 @@ import {
   GRID_ROWS,
   MAP_METADATA,
   MAP_SUBZONES,
+  scoreCell,
 } from "../model/cityModel";
 
 const BASE_COLORS = {
@@ -102,6 +103,12 @@ export function MapCanvas({
     [candidates],
   );
   const placedIds = useMemo(() => new Set(placed.map((station) => station.id)), [placed]);
+  const hoveredInView = hovered && (!activeSubzone || hovered.subzoneCode === activeSubzone.code)
+    ? hovered
+    : null;
+  const hoveredScore = hoveredInView
+    ? scoreCell(hoveredInView, weights, enabled, placed)
+    : 0;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -231,13 +238,13 @@ export function MapCanvas({
           key={activeSubzoneCode ?? "queenstown"}
           initialScale={activeSubzone ? 1.35 : 0.82}
           minScale={0.42}
-          maxScale={8}
+          maxScale={48}
           centerOnInit
           limitToBounds={false}
           smooth={false}
-          wheel={{ step: 0.1, activationKeys: ["Control"] }}
+          wheel={{ step: 0.22, activationKeys: ["Control"] }}
           panning={{ velocityDisabled: true }}
-          doubleClick={{ mode: "zoomIn", step: 0.5, animationTime: 0 }}
+          doubleClick={{ mode: "zoomIn", step: 2.5, animationTime: 0 }}
           zoomAnimation={{ disabled: true }}
           autoAlignment={{ disabled: true }}
           velocityAnimation={{ disabled: true }}
@@ -245,8 +252,8 @@ export function MapCanvas({
           {({ zoomIn, zoomOut, centerView }) => (
             <>
               <div className="map-zoom-controls" aria-label="Map zoom controls" data-export-ignore="true">
-                <button type="button" title="Zoom in" aria-label="Zoom in" onClick={() => zoomIn(0.35, 0)}><ZoomIn size={17} /></button>
-                <button type="button" title="Zoom out" aria-label="Zoom out" onClick={() => zoomOut(0.35, 0)}><ZoomOut size={17} /></button>
+                <button type="button" title="Zoom in" aria-label="Zoom in" onClick={() => zoomIn(2, 0)}><ZoomIn size={17} /></button>
+                <button type="button" title="Zoom out" aria-label="Zoom out" onClick={() => zoomOut(2, 0)}><ZoomOut size={17} /></button>
                 <button type="button" title="Reset map view" aria-label="Reset map view" onClick={() => centerView(activeSubzone ? 1.35 : 0.82, 0)}><Maximize2 size={16} /></button>
               </div>
 
@@ -263,7 +270,17 @@ export function MapCanvas({
               <TransformComponent wrapperClass="map-transform-wrapper" contentClass="map-transform-content">
                 <div
                   className="canvas-map"
-                  style={{ aspectRatio: `${viewColumns} / ${viewRows}` }}
+                  style={{
+                    aspectRatio: `${viewColumns} / ${viewRows}`,
+                    "--view-columns": viewColumns,
+                    "--view-rows": viewRows,
+                    "--map-cell-size": `${100 / viewColumns}cqw`,
+                    "--map-cell-font-size": `${58 / viewColumns}cqw`,
+                    "--map-cell-border": `${7 / viewColumns}cqw`,
+                    "--map-cell-radius": `${18 / viewColumns}cqw`,
+                    "--map-cell-glow": `${12 / viewColumns}cqw`,
+                    "--map-cell-outline": `${10 / viewColumns}cqw`,
+                  }}
                   onMouseMove={(event) => onHover(cellFromPointer(event))}
                   onMouseLeave={() => onHover(null)}
                   onClick={(event) => {
@@ -272,6 +289,17 @@ export function MapCanvas({
                   }}
                 >
                   <canvas ref={canvasRef} aria-label={`${activeSubzone?.name ?? "Queenstown"} 20 metre planning grid`} />
+
+                  {hoveredInView && (
+                    <span
+                      className="map-cell-highlight"
+                      data-testid="map-cell-highlight"
+                      style={{
+                        left: `${((hoveredInView.x - viewBounds.minX) / viewColumns) * 100}%`,
+                        top: `${((hoveredInView.y - viewBounds.minY) / viewRows) * 100}%`,
+                      }}
+                    />
+                  )}
 
                   {!activeSubzone && MAP_SUBZONES.map((subzone) => (
                     <button
@@ -331,10 +359,17 @@ export function MapCanvas({
           <a href={MAP_METADATA.featureSource.url} target="_blank" rel="noreferrer">© OpenStreetMap contributors</a>
         </div>
 
-        {hovered && !hovered.water && (
-          <div className="hover-readout" data-export-ignore="true">
-            <span>{hovered.lat.toFixed(4)}, {hovered.lon.toFixed(4)}</span>
-            <strong>{hovered.zone}</strong>
+        {hoveredInView && (
+          <div className="hover-readout" data-export-ignore="true" data-testid="cell-score-readout">
+            <div className={`hover-score ${hoveredScore < 0 ? "is-negative" : ""}`}>
+              <span>Composite score</span>
+              <strong>{hoveredScore}</strong>
+            </div>
+            <strong>{hoveredInView.zone}</strong>
+            <span>Cell {hoveredInView.x + 1}, {hoveredInView.y + 1} · {hoveredInView.buildable ? "Buildable" : "Unavailable"}</span>
+            <small>
+              H {Math.round(hoveredInView.heat * 100)} · V {Math.round(hoveredInView.vulnerable * 100)} · F {Math.round(hoveredInView.flow * 100)} · C {Math.round(hoveredInView.cooling * 100)}
+            </small>
           </div>
         )}
       </div>
