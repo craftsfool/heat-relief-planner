@@ -382,129 +382,61 @@ button { color: inherit; }
 }
 .map-transform-wrapper:active { cursor: grabbing; }
 .map-transform-content { width: auto !important; height: auto !important; position: relative; z-index: 1; will-change: transform; }
-.pixel-map {
-  width: min(700px, calc(100vw - 60px));
-  aspect-ratio: 20 / 14;
-  display: grid;
+.canvas-map {
+  width: min(720px, calc(100vw - 60px));
   position: relative;
   overflow: hidden;
   border: 1px solid #aebbc9;
   box-shadow: var(--shadow);
-  background: #dfe5ea;
+  background: transparent;
   isolation: isolate;
-}
-.real-pixel-map { aspect-ratio: 46 / 44; }
-.map-cell {
-  min-width: 0;
-  min-height: 0;
-  position: relative;
-  display: grid;
-  place-items: center;
-  padding: 0;
-  overflow: hidden;
-  border: 0;
-  border-right: 1px solid rgba(255,255,255,.88);
-  border-bottom: 1px solid rgba(255,255,255,.88);
-  background: #e2e5e8;
   cursor: crosshair;
 }
-.map-cell.is-outside {
-  background: transparent;
-  border-color: transparent;
-  cursor: default;
-  pointer-events: none;
+.canvas-map canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+  image-rendering: pixelated;
 }
-.map-cell.is-road-minor { background: #e9ecef; }
-.map-cell.is-road-major { background: #faf9f4; box-shadow: inset 0 0 0 1px rgba(172, 158, 130, .26); }
-.map-cell.is-park { background: #bcd5a4; }
-.map-cell.is-water { background: #75b9dc; cursor: default; }
-.map-cell.is-game-locked { cursor: default; }
-.map-cell.is-challenge-site:not(.is-selected) { box-shadow: inset 0 0 0 1px rgba(24, 89, 216, .24); }
-.map-cell.is-selected { box-shadow: inset 0 0 0 3px #135be0; z-index: 5; }
-.map-cell.is-hovered:not(.is-selected) { box-shadow: inset 0 0 0 2px #1d2b3e; z-index: 4; }
-.cell-overlays, .layer-fill { position: absolute; inset: 0; pointer-events: none; }
-.cell-overlays { z-index: 1; }
-.layer-fill { mix-blend-mode: multiply; }
-.service-reduction {
+.subzone-map-label {
   position: absolute;
-  inset: 0;
-  z-index: 2;
-  pointer-events: none;
-  background: #f4fff9;
-  box-shadow: inset 0 0 0 1px rgba(15, 128, 109, .2);
-  mix-blend-mode: screen;
-}
-.map-symbol {
-  position: relative;
-  z-index: 3;
-  width: 58%;
-  height: 58%;
-  max-width: 8px;
-  max-height: 8px;
-  color: #26374e;
-  filter: drop-shadow(0 1px 0 #fff);
-}
-.transit-symbol { color: #1955b7; }
-.facility-symbol { color: #44556c; }
-.candidate-marker, .station-marker {
-  position: absolute;
-  z-index: 7;
-  display: grid;
-  place-items: center;
-  color: #fff;
-  background: var(--blue);
-  border: 1px solid #fff;
-  box-shadow: 0 1px 3px rgba(16, 52, 117, 0.35);
-}
-.candidate-marker {
-  width: 84%;
-  height: 84%;
-  max-width: 12px;
-  max-height: 12px;
+  z-index: 8;
+  transform: translate(-50%, -50%);
+  max-width: 100px;
+  padding: 3px 4px;
+  color: #17293f;
+  background: rgba(255, 255, 255, .82);
+  border: 1px solid rgba(86, 105, 127, .46);
   border-radius: 3px;
   font-size: 7px;
   font-weight: 800;
+  line-height: 1.05;
+  text-align: center;
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgba(15, 31, 50, .16);
 }
-.station-marker {
-  width: 88%;
-  height: 88%;
-  max-width: 12px;
-  max-height: 12px;
-  border-radius: 50%;
-  background: #0f806d;
-  font-size: 7px;
-  font-weight: 800;
-}
-.candidate-marker.is-double-digit, .station-marker.is-double-digit { font-size: 5px; }
-.district-label, .coast-label {
+.subzone-map-label:hover,
+.subzone-map-label:focus-visible { z-index: 12; color: #fff; background: var(--blue); border-color: #fff; }
+.map-site-marker {
+  width: 14px;
+  height: 14px;
   position: absolute;
-  z-index: 6;
-  pointer-events: none;
-  padding: 2px 4px;
-  color: rgba(30, 41, 59, 0.8);
-  background: rgba(255,255,255,.7);
-  font-size: clamp(7px, .75vw, 10px);
-  font-weight: 800;
-  text-transform: uppercase;
-}
-.district-label.north { left: 14%; top: 9%; }
-.district-label.river { left: 43%; top: 13%; }
-.district-label.meadow { right: 8%; top: 16%; }
-.district-label.south { left: 49%; bottom: 17%; }
-.coast-label { left: 8%; bottom: 7%; color: #165d83; background: rgba(218,242,255,.75); }
-.real-place-label {
-  position: absolute;
-  z-index: 6;
+  z-index: 16;
   transform: translate(-50%, -50%);
-  pointer-events: none;
-  padding: 2px 3px;
-  color: rgba(24, 35, 52, .82);
-  background: rgba(255,255,255,.72);
-  font-size: 7px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  color: #fff;
+  background: var(--blue);
+  border: 1px solid #fff;
+  border-radius: 3px;
+  box-shadow: 0 1px 3px rgba(16, 52, 117, .4);
+  font-size: 6px;
   font-weight: 800;
-  line-height: 1;
-  white-space: nowrap;
+  cursor: pointer;
 }
+.map-site-marker.is-station { border-radius: 50%; background: #0f806d; }
+.map-site-marker.is-selected { z-index: 17; outline: 2px solid #fff; box-shadow: 0 0 0 3px #123f9e; }
 .map-zoom-controls {
   position: absolute;
   left: 12px;
@@ -547,6 +479,19 @@ button { color: inherit; }
 }
 .map-place-title strong { font-size: 11px; }
 .map-place-title span { color: var(--muted); font-size: 9px; }
+.subzone-back-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 7px 0 0;
+  color: var(--blue);
+  background: transparent;
+  border: 0;
+  border-right: 1px solid #d5dde7;
+  font-size: 9px;
+  font-weight: 800;
+  cursor: pointer;
+}
 .shelter-roster {
   position: absolute;
   top: 52px;
@@ -804,13 +749,13 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   .segmented-control button { padding: 0 7px; }
   .map-legend { align-self: flex-start; }
   .map-shell { width: 100%; min-height: 390px; padding: 0; }
-  .pixel-map { width: calc(100vw - 24px); max-width: 700px; }
+  .canvas-map { width: calc(100vw - 24px); max-width: 720px; }
   .map-place-title { left: 50px; max-width: calc(100% - 62px); }
   .map-place-title span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .shelter-roster { top: 50px; right: 8px; }
   .shelter-roster.is-open { width: min(270px, calc(100% - 16px)); }
   .hover-readout { right: 8px; }
-  .candidate-marker { font-size: 7px; }
+  .subzone-map-label { max-width: 74px; padding: 2px 3px; font-size: 6px; }
   .inspector { display: block; border-top: 1px solid var(--border); }
   .statusbar { grid-template-columns: 1fr 1fr; padding: 10px 12px; }
 }

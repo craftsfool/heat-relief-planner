@@ -1,15 +1,13 @@
 import {
-  Building2,
+  ArrowLeft,
   Check,
   Download,
   LoaderCircle,
   Maximize2,
-  TrainFront,
-  Trees,
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { TransformComponent, TransformWrapper } from "react-zoom-pan-pinch";
 import { toPng } from "html-to-image";
 import { ShelterRoster } from "./ShelterRoster";
@@ -17,62 +15,42 @@ import {
   getStationCoverage,
   GRID_COLS,
   GRID_ROWS,
-  MAP_LABELS,
   MAP_METADATA,
+  MAP_SUBZONES,
 } from "../model/cityModel";
 
-const facilityIcon = {
-  mall: Building2,
-  community: Trees,
+const BASE_COLORS = {
+  land: [226, 229, 232],
+  roadMinor: [233, 236, 239],
+  roadMajor: [250, 249, 244],
+  park: [188, 213, 164],
+  water: [117, 185, 220],
+  building: [180, 176, 169],
+  construction: [205, 143, 108],
+  facility: [65, 86, 108],
+  transit: [91, 72, 143],
 };
 
-function CellOverlay({ cell, layers, weights, enabled, mode, activeLayer, placed }) {
-  if (cell.outside) return null;
-  const visibleLayers = mode === "base"
-    ? []
-    : mode === "single"
-      ? layers.filter((layer) => layer.id === activeLayer)
-      : layers;
-  const stationCoverage = getStationCoverage(cell, placed);
-  const maxCompositeWeight = Math.max(
-    0,
-    ...visibleLayers
-      .filter((layer) => enabled[layer.id])
-      .map((layer) => weights[layer.id]),
-  );
-  const remainingDemand = 1 - stationCoverage * 0.84;
+const hexToRgb = (hex) => {
+  const value = Number.parseInt(hex.slice(1), 16);
+  return [(value >> 16) & 255, (value >> 8) & 255, value & 255];
+};
 
-  return (
-    <span className="cell-overlays" aria-hidden="true">
-      {visibleLayers.map((layer) => {
-        if (!enabled[layer.id]) return null;
-        const intensity = cell[layer.id];
-        const opacity = mode === "single"
-          ? Math.min(0.72, 0.08 + intensity * 0.64)
-          : maxCompositeWeight > 0 && weights[layer.id] > 0
-            ? Math.min(
-                0.34,
-                (0.04 + intensity * 0.26) *
-                  (0.55 + 0.45 * (weights[layer.id] / maxCompositeWeight)),
-              )
-            : 0;
-        return (
-          <span
-            className="layer-fill"
-            key={layer.id}
-            style={{ backgroundColor: layer.color, opacity: opacity * remainingDemand }}
-          />
-        );
-      })}
-      {stationCoverage > 0 && (
-        <span
-          className="service-reduction"
-          style={{ opacity: stationCoverage * 0.72 }}
-        />
-      )}
-    </span>
-  );
-}
+const blend = (base, overlay, opacity) => base.map(
+  (channel, index) => Math.round(channel * (1 - opacity) + overlay[index] * opacity),
+);
+
+const getBaseColor = (cell) => {
+  if (cell.water) return BASE_COLORS.water;
+  if (cell.transit) return BASE_COLORS.transit;
+  if (cell.facility) return BASE_COLORS.facility;
+  if (cell.construction) return BASE_COLORS.construction;
+  if (cell.building) return BASE_COLORS.building;
+  if (cell.park) return BASE_COLORS.park;
+  if (cell.road === "major") return BASE_COLORS.roadMajor;
+  if (cell.road === "minor") return BASE_COLORS.roadMinor;
+  return BASE_COLORS.land;
+};
 
 export function MapCanvas({
   cells,
@@ -85,18 +63,109 @@ export function MapCanvas({
   selected,
   hovered,
   placed,
+  activeSubzoneCode,
+  onSubzone,
   onMode,
   onSelect,
   onHover,
 }) {
   const mapShellRef = useRef(null);
+  const canvasRef = useRef(null);
   const [exportStatus, setExportStatus] = useState("idle");
-  const candidateIndex = new Map(candidates.map((candidate, index) => [candidate.id, index + 1]));
-  const placedIds = new Set(placed.map((station) => station.id));
+  const activeSubzone = MAP_SUBZONES.find((subzone) => subzone.code === activeSubzoneCode) ?? null;
+  const viewBounds = activeSubzone?.bounds ?? {
+    minX: 0,
+    minY: 0,
+    maxX: GRID_COLS - 1,
+    maxY: GRID_ROWS - 1,
+  };
+  const viewColumns = viewBounds.maxX - viewBounds.minX + 1;
+  const viewRows = viewBounds.maxY - viewBounds.minY + 1;
+  const viewCells = useMemo(
+    () => activeSubzone
+      ? cells.filter((cell) => cell.subzoneCode === activeSubzone.code)
+      : cells,
+    [activeSubzone, cells],
+  );
+  const viewCellByCoordinate = useMemo(
+    () => new Map(viewCells.map((cell) => [`${cell.x}-${cell.y}`, cell])),
+    [viewCells],
+  );
+  const visibleCandidates = useMemo(
+    () => activeSubzone
+      ? candidates.filter((candidate) => candidate.subzoneCode === activeSubzone.code)
+      : candidates,
+    [activeSubzone, candidates],
+  );
+  const candidateIndex = useMemo(
+    () => new Map(candidates.map((candidate, index) => [candidate.id, index + 1])),
+    [candidates],
+  );
+  const placedIds = useMemo(() => new Set(placed.map((station) => station.id)), [placed]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    canvas.width = viewColumns;
+    canvas.height = viewRows;
+    const context = canvas.getContext("2d", { alpha: true });
+    const image = context.createImageData(viewColumns, viewRows);
+    const visibleLayers = mode === "base"
+      ? []
+      : mode === "single"
+        ? layers.filter((layer) => layer.id === activeLayer)
+        : layers;
+    const maxCompositeWeight = Math.max(
+      0,
+      ...visibleLayers
+        .filter((layer) => enabled[layer.id])
+        .map((layer) => weights[layer.id]),
+    );
+
+    for (const cell of viewCells) {
+      let color = getBaseColor(cell);
+      const stationCoverage = getStationCoverage(cell, placed);
+
+      for (const layer of visibleLayers) {
+        if (!enabled[layer.id]) continue;
+        const intensity = cell[layer.id];
+        const opacity = mode === "single"
+          ? Math.min(0.74, 0.08 + intensity * 0.66)
+          : maxCompositeWeight > 0 && weights[layer.id] > 0
+            ? Math.min(
+                0.36,
+                (0.04 + intensity * 0.28) *
+                  (0.55 + 0.45 * (weights[layer.id] / maxCompositeWeight)),
+              )
+            : 0;
+        color = blend(color, hexToRgb(layer.color), opacity * (1 - stationCoverage * 0.84));
+      }
+
+      if (stationCoverage > 0) {
+        color = blend(color, [244, 255, 249], stationCoverage * 0.72);
+      }
+
+      const localX = cell.x - viewBounds.minX;
+      const localY = cell.y - viewBounds.minY;
+      const index = (localY * viewColumns + localX) * 4;
+      image.data[index] = color[0];
+      image.data[index + 1] = color[1];
+      image.data[index + 2] = color[2];
+      image.data[index + 3] = 255;
+    }
+
+    context.putImageData(image, 0, 0);
+  }, [activeLayer, enabled, layers, mode, placed, viewBounds.minX, viewBounds.minY, viewCells, viewColumns, viewRows, weights]);
+
+  const cellFromPointer = (event) => {
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const localX = Math.floor(((event.clientX - bounds.left) / bounds.width) * viewColumns);
+    const localY = Math.floor(((event.clientY - bounds.top) / bounds.height) * viewRows);
+    return viewCellByCoordinate.get(`${localX + viewBounds.minX}-${localY + viewBounds.minY}`) ?? null;
+  };
 
   const exportVisibleMap = async () => {
     if (!mapShellRef.current || exportStatus === "exporting") return;
-
     setExportStatus("exporting");
     try {
       await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
@@ -112,7 +181,8 @@ export function MapCanvas({
         style: { cursor: "default" },
       });
       const link = document.createElement("a");
-      link.download = `queenstown-heat-relief-${new Date().toISOString().slice(0, 10)}.png`;
+      const mapName = activeSubzone?.name.toLowerCase().replaceAll(" ", "-") ?? "queenstown";
+      link.download = `${mapName}-heat-relief-${new Date().toISOString().slice(0, 10)}.png`;
       link.href = dataUrl;
       link.click();
       setExportStatus("done");
@@ -128,27 +198,18 @@ export function MapCanvas({
     <main className="map-workspace">
       <div className="map-toolbar">
         <div className="segmented-control" aria-label="Map view mode">
-          <button className={mode === "composite" ? "is-selected" : ""} onClick={() => onMode("composite")} type="button">
-            Composite
-          </button>
-          <button className={mode === "single" ? "is-selected" : ""} onClick={() => onMode("single")} type="button">
-            Single layer
-          </button>
-          <button className={mode === "base" ? "is-selected" : ""} onClick={() => onMode("base")} type="button">
-            Base map
-          </button>
+          <button className={mode === "composite" ? "is-selected" : ""} onClick={() => onMode("composite")} type="button">Composite</button>
+          <button className={mode === "single" ? "is-selected" : ""} onClick={() => onMode("single")} type="button">Single layer</button>
+          <button className={mode === "base" ? "is-selected" : ""} onClick={() => onMode("base")} type="button">Base map</button>
         </div>
 
         <div className="map-toolbar-meta">
           <div className="map-legend" aria-label="Score intensity legend">
             <span>{mode === "single" ? layers.find((layer) => layer.id === activeLayer)?.label : "Layer intensity"}</span>
             <div className="legend-steps">
-              {[0.16, 0.3, 0.44, 0.58, 0.72].map((opacity) => (
-                <i key={opacity} style={{ opacity }} />
-              ))}
+              {[0.16, 0.3, 0.44, 0.58, 0.72].map((opacity) => <i key={opacity} style={{ opacity }} />)}
             </div>
-            <small>Low</small>
-            <small>High</small>
+            <small>Low</small><small>High</small>
           </div>
           <button
             className={`map-export-button is-${exportStatus}`}
@@ -159,13 +220,7 @@ export function MapCanvas({
             disabled={exportStatus === "exporting"}
             onClick={exportVisibleMap}
           >
-            {exportStatus === "exporting" ? (
-              <LoaderCircle className="is-spinning" size={15} />
-            ) : exportStatus === "done" ? (
-              <Check size={15} />
-            ) : (
-              <Download size={15} />
-            )}
+            {exportStatus === "exporting" ? <LoaderCircle className="is-spinning" size={15} /> : exportStatus === "done" ? <Check size={15} /> : <Download size={15} />}
             <span>{exportStatus === "exporting" ? "Exporting" : exportStatus === "done" ? "Saved" : exportStatus === "error" ? "Retry export" : "Export PNG"}</span>
           </button>
         </div>
@@ -173,9 +228,10 @@ export function MapCanvas({
 
       <div className="map-shell" ref={mapShellRef}>
         <TransformWrapper
-          initialScale={0.78}
+          key={activeSubzoneCode ?? "queenstown"}
+          initialScale={activeSubzone ? 1.35 : 0.82}
           minScale={0.42}
-          maxScale={5}
+          maxScale={8}
           centerOnInit
           limitToBounds={false}
           smooth={false}
@@ -189,117 +245,93 @@ export function MapCanvas({
           {({ zoomIn, zoomOut, centerView }) => (
             <>
               <div className="map-zoom-controls" aria-label="Map zoom controls" data-export-ignore="true">
-                <button type="button" title="Zoom in" aria-label="Zoom in" onClick={() => zoomIn(0.35, 0)}>
-                  <ZoomIn size={17} />
-                </button>
-                <button type="button" title="Zoom out" aria-label="Zoom out" onClick={() => zoomOut(0.35, 0)}>
-                  <ZoomOut size={17} />
-                </button>
-                <button type="button" title="Reset map view" aria-label="Reset map view" onClick={() => centerView(0.78, 0)}>
-                  <Maximize2 size={16} />
-                </button>
+                <button type="button" title="Zoom in" aria-label="Zoom in" onClick={() => zoomIn(0.35, 0)}><ZoomIn size={17} /></button>
+                <button type="button" title="Zoom out" aria-label="Zoom out" onClick={() => zoomOut(0.35, 0)}><ZoomOut size={17} /></button>
+                <button type="button" title="Reset map view" aria-label="Reset map view" onClick={() => centerView(activeSubzone ? 1.35 : 0.82, 0)}><Maximize2 size={16} /></button>
               </div>
 
               <div className="map-place-title">
-                <strong>Queenstown</strong>
-                <span>{MAP_METADATA.cellSizeMetres} m GIS grid · {candidates.length} fixed sites</span>
+                {activeSubzone && (
+                  <button className="subzone-back-button" type="button" onClick={() => onSubzone(null)}>
+                    <ArrowLeft size={14} /> Queenstown
+                  </button>
+                )}
+                <strong>{activeSubzone?.name ?? "Queenstown"}</strong>
+                <span>{MAP_METADATA.cellSizeMetres} m grid · {viewCells.length.toLocaleString()} visible cells · {visibleCandidates.length} candidate sites</span>
               </div>
 
-              <TransformComponent
-                wrapperClass="map-transform-wrapper"
-                contentClass="map-transform-content"
-              >
+              <TransformComponent wrapperClass="map-transform-wrapper" contentClass="map-transform-content">
                 <div
-                  className="pixel-map real-pixel-map"
-                  style={{
-                    gridTemplateColumns: `repeat(${GRID_COLS}, minmax(0, 1fr))`,
-                    gridTemplateRows: `repeat(${GRID_ROWS}, minmax(0, 1fr))`,
-                  }}
+                  className="canvas-map"
+                  style={{ aspectRatio: `${viewColumns} / ${viewRows}` }}
+                  onMouseMove={(event) => onHover(cellFromPointer(event))}
                   onMouseLeave={() => onHover(null)}
+                  onClick={(event) => {
+                    const cell = cellFromPointer(event);
+                    if (cell && candidateIndex.has(cell.id)) onSelect(cell);
+                  }}
                 >
-                  {cells.map((cell) => {
-                    const FacilityIcon = cell.facility ? facilityIcon[cell.facility.kind] : null;
-                    const isSelected = selected?.id === cell.id;
-                    const isHovered = hovered?.id === cell.id;
-                    const candidateRank = candidateIndex.get(cell.id);
-                    const isCandidate = candidateRank !== undefined;
+                  <canvas ref={canvasRef} aria-label={`${activeSubzone?.name ?? "Queenstown"} 20 metre planning grid`} />
+
+                  {!activeSubzone && MAP_SUBZONES.map((subzone) => (
+                    <button
+                      className="subzone-map-label"
+                      key={subzone.code}
+                      type="button"
+                      style={{
+                        left: `${((subzone.x + 0.5) / GRID_COLS) * 100}%`,
+                        top: `${((subzone.y + 0.5) / GRID_ROWS) * 100}%`,
+                      }}
+                      title={`Open ${subzone.name} subzone`}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onSubzone(subzone.code);
+                      }}
+                    >
+                      {subzone.name}
+                    </button>
+                  ))}
+
+                  {visibleCandidates.map((candidate) => {
+                    const rank = candidateIndex.get(candidate.id);
+                    const isStation = placedIds.has(candidate.id);
                     return (
                       <button
+                        className={`map-site-marker ${isStation ? "is-station" : ""} ${selected?.id === candidate.id ? "is-selected" : ""}`}
+                        key={candidate.id}
                         type="button"
-                        className={[
-                          "map-cell",
-                          cell.outside ? "is-outside" : "",
-                          cell.water ? "is-water" : "",
-                          cell.park ? "is-park" : "",
-                          cell.road === "major" ? "is-road is-road-major" : "",
-                          cell.road === "minor" ? "is-road is-road-minor" : "",
-                          isCandidate ? "is-challenge-site" : "is-game-locked",
-                          isSelected ? "is-selected" : "",
-                          isHovered ? "is-hovered" : "",
-                        ].join(" ")}
-                        key={cell.id}
-                        aria-label={`Cell ${cell.x + 1}, ${cell.y + 1}, ${cell.zone}${isCandidate ? `, priority ${candidateRank}` : ", locked for this challenge"}`}
-                        tabIndex={isCandidate ? 0 : -1}
-                        onMouseEnter={() => !cell.outside && onHover(cell)}
-                        onFocus={() => isCandidate && onHover(cell)}
-                        onClick={() => isCandidate && onSelect(cell)}
+                        style={{
+                          left: `${((candidate.x - viewBounds.minX + 0.5) / viewColumns) * 100}%`,
+                          top: `${((candidate.y - viewBounds.minY + 0.5) / viewRows) * 100}%`,
+                        }}
+                        aria-label={`Candidate ${rank}, ${candidate.zone}`}
+                        title={`Candidate ${rank} · ${candidate.zone}`}
+                        onMouseEnter={() => onHover(candidate)}
+                        onFocus={() => onHover(candidate)}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onSelect(candidate);
+                        }}
                       >
-                        <CellOverlay
-                          cell={cell}
-                          layers={layers}
-                          weights={weights}
-                          enabled={enabled}
-                          mode={mode}
-                          activeLayer={activeLayer}
-                          placed={placed}
-                        />
-                        {cell.transit && <TrainFront className="map-symbol transit-symbol" size={13} aria-label={cell.transit.label} />}
-                        {FacilityIcon && <FacilityIcon className="map-symbol facility-symbol" size={11} aria-label={cell.facility.label} />}
-                        {isCandidate && !placedIds.has(cell.id) && (
-                          <span className={`candidate-marker ${candidateRank >= 10 ? "is-double-digit" : ""}`}>{candidateRank}</span>
-                        )}
-                        {placedIds.has(cell.id) && (
-                          <span className={`station-marker ${candidateRank >= 10 ? "is-double-digit" : ""}`} title={`Placed station at priority ${candidateRank}`}>
-                            {candidateRank}
-                          </span>
-                        )}
+                        {rank}
                       </button>
                     );
                   })}
-
-                  {MAP_LABELS.map((label) => (
-                    <span
-                      className="real-place-label"
-                      key={label.label}
-                      style={{
-                        left: `${((label.x + 0.5) / GRID_COLS) * 100}%`,
-                        top: `${((label.y + 0.5) / GRID_ROWS) * 100}%`,
-                      }}
-                    >
-                      {label.label}
-                    </span>
-                  ))}
                 </div>
               </TransformComponent>
             </>
           )}
         </TransformWrapper>
 
-        <ShelterRoster
-          placed={placed}
-          candidates={candidates}
-          cells={cells}
-          selected={selected}
-          onSelect={onSelect}
-        />
+        <ShelterRoster placed={placed} candidates={candidates} cells={cells} selected={selected} onSelect={onSelect} />
 
         <div className="map-attribution">
-          <a href={MAP_METADATA.boundarySource.url} target="_blank" rel="noreferrer">URA boundary</a>
+          <a href={MAP_METADATA.boundarySource.url} target="_blank" rel="noreferrer">URA subzones</a>
           <span>·</span>
           <a href={MAP_METADATA.featureSource.url} target="_blank" rel="noreferrer">© OpenStreetMap contributors</a>
         </div>
 
-        {hovered && !hovered.water && !hovered.outside && (
+        {hovered && !hovered.water && (
           <div className="hover-readout" data-export-ignore="true">
             <span>{hovered.lat.toFixed(4)}, {hovered.lon.toFixed(4)}</span>
             <strong>{hovered.zone}</strong>

@@ -4,7 +4,7 @@ export const GRID_COLS = queenstownGrid.metadata.columns;
 export const GRID_ROWS = queenstownGrid.metadata.rows;
 export const CELL_SIZE_METRES = queenstownGrid.metadata.cellSizeMetres;
 export const MAP_METADATA = queenstownGrid.metadata;
-export const MAP_LABELS = queenstownGrid.labels;
+export const MAP_SUBZONES = queenstownGrid.subzones;
 export const STATION_RADII = [100, 150, 200, 250, 300];
 
 export const LAYER_DEFINITIONS = [
@@ -45,6 +45,37 @@ export const LAYER_DEFINITIONS = [
 const clamp = (value, min = 0, max = 1) =>
   Math.min(max, Math.max(min, value));
 const CELL_HALF_DIAGONAL = Math.SQRT2 / 2;
+const POPULATION_AREA_SCALE = (CELL_SIZE_METRES / 160) ** 2;
+const MIN_CANDIDATE_SPACING_CELLS = Math.max(2, Math.round(320 / CELL_SIZE_METRES));
+
+const decodeCell = (packed) => {
+  if (!Array.isArray(packed)) return packed;
+  const [x, y, lon, lat, subzoneIndex, flags, heat, vulnerable, flow, cooling] = packed;
+  const subzone = MAP_SUBZONES[subzoneIndex];
+  return {
+    id: `${x}-${y}`,
+    x,
+    y,
+    lon,
+    lat,
+    subzoneCode: subzone.code,
+    zone: subzone.name,
+    water: Boolean(flags & 1),
+    park: Boolean(flags & 2),
+    road: flags & 4 ? "major" : flags & 8 ? "minor" : undefined,
+    buildable: Boolean(flags & 16),
+    building: Boolean(flags & 32),
+    construction: Boolean(flags & 64),
+    facility: Boolean(flags & 128),
+    transit: Boolean(flags & 256),
+    heat,
+    vulnerable,
+    flow,
+    cooling,
+  };
+};
+
+const baseCells = queenstownGrid.cells.map(decodeCell);
 
 const distanceToCellArea = (a, b) =>
   Math.max(0, Math.hypot(a.x - b.x, a.y - b.y) - CELL_HALF_DIAGONAL);
@@ -64,7 +95,7 @@ export function buildCity(time = "afternoon", scenario = "baseline") {
   const scenarioHeatBoost = scenario === "heatwave" ? 0.18 : 0;
   const scenarioFlowBoost = scenario === "high-growth" ? 0.18 : 0;
 
-  return queenstownGrid.cells.map((cell) => {
+  return baseCells.map((cell) => {
     if (cell.outside || cell.water) return { ...cell };
     return {
       ...cell,
@@ -120,20 +151,33 @@ export function scoreCell(cell, weights, enabledLayers, placedStations = []) {
 }
 
 export function selectChallengeSites(cells, count = 12, random = Math.random) {
-  const pool = shuffled(cells.filter((cell) => cell.buildable), random);
+  const poolsBySubzone = new Map();
+  for (const cell of shuffled(cells.filter((candidate) => candidate.buildable), random)) {
+    const pool = poolsBySubzone.get(cell.subzoneCode) ?? [];
+    pool.push(cell);
+    poolsBySubzone.set(cell.subzoneCode, pool);
+  }
+  const subzonePools = shuffled([...poolsBySubzone.values()], random);
   const selected = [];
 
-  for (const cell of pool) {
-    const separated = selected.every(
-      (candidate) => Math.hypot(candidate.x - cell.x, candidate.y - cell.y) >= 2,
-    );
-    if (separated) selected.push(cell);
-    if (selected.length === count) break;
+  while (selected.length < count) {
+    let addedThisRound = false;
+    for (const pool of subzonePools) {
+      const candidateIndex = pool.findIndex((cell) => selected.every(
+        (candidate) => Math.hypot(candidate.x - cell.x, candidate.y - cell.y) >= MIN_CANDIDATE_SPACING_CELLS,
+      ));
+      if (candidateIndex < 0) continue;
+      selected.push(pool.splice(candidateIndex, 1)[0]);
+      addedThisRound = true;
+      if (selected.length === count) break;
+    }
+    if (!addedThisRound) break;
   }
 
   if (selected.length < count) {
     const selectedIds = new Set(selected.map((cell) => cell.id));
-    selected.push(...pool.filter((cell) => !selectedIds.has(cell.id)).slice(0, count - selected.length));
+    const remainder = subzonePools.flat().filter((cell) => !selectedIds.has(cell.id));
+    selected.push(...remainder.slice(0, count - selected.length));
   }
 
   return selected;
@@ -154,7 +198,23 @@ export function rankChallengeSites(cells, siteIds, weights, enabledLayers) {
 export function estimateCellPopulation(cell) {
   if (!cell || cell.outside || cell.water) return 0;
   const densityIndex = 0.68 * cell.vulnerable + 0.32 * cell.flow;
-  return Math.round(35 + densityIndex * 720);
+  return (35 + densityIndex * 720) * POPULATION_AREA_SCALE;
+}
+
+export function selectGlobalCandidatePool(cells, weights, enabledLayers) {
+  const blockSize = Math.max(1, Math.round(800 / CELL_SIZE_METRES));
+  const bestByBlock = new Map();
+
+  for (const cell of cells) {
+    if (!cell.buildable) continue;
+    const key = `${Math.floor(cell.x / blockSize)}-${Math.floor(cell.y / blockSize)}`;
+    const current = bestByBlock.get(key);
+    if (!current || scoreCell(cell, weights, enabledLayers) > scoreCell(current, weights, enabledLayers)) {
+      bestByBlock.set(key, cell);
+    }
+  }
+
+  return [...bestByBlock.values()];
 }
 
 export function getPopulationReached(cells, placedStations = []) {

@@ -15,6 +15,7 @@ import {
   rankChallengeSites,
   scoreCell,
   selectChallengeSites,
+  selectGlobalCandidatePool,
 } from "./model/cityModel";
 import { generateOptimalSolution } from "./model/optimalSolution";
 
@@ -39,6 +40,7 @@ export default function App() {
   const [hovered, setHovered] = useState(null);
   const [radius, setRadius] = useState(150);
   const [placed, setPlaced] = useState([]);
+  const [activeSubzoneCode, setActiveSubzoneCode] = useState(null);
   const [candidateCount, setCandidateCount] = useState(DEFAULT_CANDIDATE_COUNT);
   const [challengeIds, setChallengeIds] = useState(() =>
     selectChallengeSites(buildCity("afternoon", "baseline"), DEFAULT_CANDIDATE_COUNT)
@@ -50,8 +52,15 @@ export default function App() {
     () => rankChallengeSites(cells, challengeIds, weights, enabled),
     [cells, challengeIds, weights, enabled],
   );
+  const visibleCandidates = useMemo(
+    () => activeSubzoneCode
+      ? candidates.filter((candidate) => candidate.subzoneCode === activeSubzoneCode)
+      : candidates,
+    [activeSubzoneCode, candidates],
+  );
+  const cellById = useMemo(() => new Map(cells.map((cell) => [cell.id, cell])), [cells]);
   const challengeIdSet = useMemo(() => new Set(challengeIds), [challengeIds]);
-  const selected = cells.find((cell) => cell.id === selectedId) ?? candidates[0] ?? null;
+  const selected = cellById.get(selectedId) ?? visibleCandidates[0] ?? null;
   const candidateRank = candidates.findIndex((candidate) => candidate.id === selected?.id) + 1;
   const isCandidate = candidateRank > 0;
   const selectedBaseScore = selected ? scoreCell(selected, weights, enabled) : 0;
@@ -144,7 +153,7 @@ export default function App() {
   };
 
   const applyGlobalOptimalSolution = async () => {
-    const buildableCells = cells.filter((cell) => cell.buildable);
+    const buildableCells = selectGlobalCandidatePool(cells, weights, enabled);
     const solution = await generateOptimalSolution(
       buildableCells,
       cells,
@@ -243,6 +252,15 @@ export default function App() {
           selected={selected}
           hovered={hovered}
           placed={placed}
+          activeSubzoneCode={activeSubzoneCode}
+          onSubzone={(code) => {
+            setActiveSubzoneCode(code);
+            const firstVisibleCandidate = code
+              ? candidates.find((candidate) => candidate.subzoneCode === code)
+              : candidates[0];
+            setSelectedId(firstVisibleCandidate?.id ?? null);
+            setHovered(null);
+          }}
           onMode={setMode}
           onSelect={(cell) => challengeIdSet.has(cell.id) && setSelectedId(cell.id)}
           onHover={setHovered}

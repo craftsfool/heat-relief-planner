@@ -1,5 +1,6 @@
 import {
   STATION_RADII,
+  CELL_SIZE_METRES,
   estimateCellPopulation,
   getCellMetrics,
   getStationCoverage,
@@ -49,6 +50,9 @@ export function buildOptimalProblem(candidateCells, cells, budget) {
   const demandCells = cells
     .map((cell, index) => ({ cell, index, population: estimateCellPopulation(cell) }))
     .filter(({ population }) => population > 0);
+  const demandByCoordinate = new Map(
+    demandCells.map((demand) => [`${demand.cell.x}-${demand.cell.y}`, demand]),
+  );
   const stationOptions = [];
   const assignmentsByCell = new Map();
   const objectiveTerms = [];
@@ -60,19 +64,24 @@ export function buildOptimalProblem(candidateCells, cells, budget) {
       const { cost } = getCellMetrics(candidate, radius, cells);
       stationOptions.push({ variable, candidate, radius, cost });
 
-      demandCells.forEach(({ cell, index, population }) => {
-        const coverage = getStationCoverage(cell, [{ ...candidate, radius }]);
-        if (coverage <= 0) return;
+      const reach = Math.ceil(radius / CELL_SIZE_METRES + 1);
+      for (let offsetY = -reach; offsetY <= reach; offsetY += 1) {
+        for (let offsetX = -reach; offsetX <= reach; offsetX += 1) {
+          const demand = demandByCoordinate.get(`${candidate.x + offsetX}-${candidate.y + offsetY}`);
+          if (!demand) continue;
+          const coverage = getStationCoverage(demand.cell, [{ ...candidate, radius }]);
+          if (coverage <= 0) continue;
 
-        const assignment = `z_${candidateIndex}_${radius}_${index}`;
-        const contribution = formatCoefficient(population * coverage);
-        objectiveTerms.push(`+ ${contribution} ${assignment}`);
-        linkConstraints.push(` link_${candidateIndex}_${radius}_${index}: ${assignment} - ${variable} <= 0`);
+          const assignment = `z_${candidateIndex}_${radius}_${demand.index}`;
+          const contribution = formatCoefficient(demand.population * coverage);
+          objectiveTerms.push(`+ ${contribution} ${assignment}`);
+          linkConstraints.push(` link_${candidateIndex}_${radius}_${demand.index}: ${assignment} - ${variable} <= 0`);
 
-        const cellAssignments = assignmentsByCell.get(index) ?? [];
-        cellAssignments.push(assignment);
-        assignmentsByCell.set(index, cellAssignments);
-      });
+          const cellAssignments = assignmentsByCell.get(demand.index) ?? [];
+          cellAssignments.push(assignment);
+          assignmentsByCell.set(demand.index, cellAssignments);
+        }
+      }
     });
   });
 
