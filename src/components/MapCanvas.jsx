@@ -276,23 +276,26 @@ export function MapCanvas({
 
               <TransformComponent wrapperClass="map-transform-wrapper" contentClass="map-transform-content">
                 <div
-                  className="canvas-map"
+                  className={`canvas-map ${mapScale >= 3.5 ? "is-cell-detail" : ""}`}
                   style={{
                     aspectRatio: `${viewColumns} / ${viewRows}`,
                     "--view-columns": viewColumns,
                     "--view-rows": viewRows,
                     "--map-cell-size": `${100 / viewColumns}cqw`,
-                    "--map-cell-font-size": `${58 / viewColumns}cqw`,
-                    "--map-cell-border": `${7 / viewColumns}cqw`,
-                    "--map-cell-radius": `${18 / viewColumns}cqw`,
-                    "--map-cell-glow": `${12 / viewColumns}cqw`,
-                    "--map-cell-outline": `${10 / viewColumns}cqw`,
+                    "--beacon-cell-size": `${50 / viewColumns}cqw`,
+                    "--map-cell-font-size": `${29 / viewColumns}cqw`,
+                    "--map-cell-border": `${3.5 / viewColumns}cqw`,
+                    "--map-cell-radius": `${9 / viewColumns}cqw`,
+                    "--map-cell-glow": `${6 / viewColumns}cqw`,
+                    "--map-cell-outline": `${3 / viewColumns}cqw`,
+                    "--map-highlight-outline": `${2 / viewColumns}cqw`,
+                    "--map-highlight-inset": `${1 / viewColumns}cqw`,
                     "--beacon-min-size": `${12 / mapScale}px`,
                     "--beacon-min-font-size": `${7 / mapScale}px`,
                     "--beacon-min-border": `${1 / mapScale}px`,
                     "--beacon-min-radius": `${3 / mapScale}px`,
                     "--beacon-min-glow": `${2 / mapScale}px`,
-                    "--beacon-min-outline": `${2 / mapScale}px`,
+                    "--beacon-min-outline": `${1 / mapScale}px`,
                   }}
                   onMouseMove={(event) => onHover(cellFromPointer(event))}
                   onMouseLeave={() => onHover(null)}
