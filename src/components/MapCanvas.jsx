@@ -12,6 +12,7 @@ import {
 import { useRef, useState } from "react";
 import { TransformComponent, TransformWrapper } from "react-zoom-pan-pinch";
 import { toPng } from "html-to-image";
+import { ShelterRoster } from "./ShelterRoster";
 import {
   getStationCoverage,
   GRID_COLS,
@@ -283,6 +284,14 @@ export function MapCanvas({
             </>
           )}
         </TransformWrapper>
+
+        <ShelterRoster
+          placed={placed}
+          candidates={candidates}
+          cells={cells}
+          selected={selected}
+          onSelect={onSelect}
+        />
 
         <div className="map-attribution">
           <a href={MAP_METADATA.boundarySource.url} target="_blank" rel="noreferrer">URA boundary</a>

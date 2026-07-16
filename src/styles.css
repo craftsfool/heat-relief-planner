@@ -520,6 +520,80 @@ button { color: inherit; }
 }
 .map-place-title strong { font-size: 11px; }
 .map-place-title span { color: var(--muted); font-size: 9px; }
+.shelter-roster {
+  position: absolute;
+  top: 52px;
+  right: 12px;
+  z-index: 40;
+  width: 168px;
+  overflow: hidden;
+  color: var(--text);
+  background: rgba(255,255,255,.96);
+  border: 1px solid #b9c5d2;
+  border-radius: 5px;
+  box-shadow: 0 5px 16px rgba(16, 24, 40, .16);
+}
+.shelter-roster.is-open { width: min(270px, calc(100% - 24px)); }
+.shelter-roster-toggle {
+  width: 100%;
+  min-height: 36px;
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto 16px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 9px;
+  color: #29415e;
+  background: #fff;
+  border: 0;
+  cursor: pointer;
+}
+.shelter-roster-toggle:hover { color: var(--blue); background: #f2f6fd; }
+.shelter-roster-toggle > span { overflow: hidden; font-size: 10px; font-weight: 800; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+.shelter-roster-toggle > strong {
+  min-width: 19px;
+  padding: 2px 5px;
+  color: #fff;
+  background: #0f806d;
+  border-radius: 9px;
+  font-size: 9px;
+  line-height: 1.4;
+  text-align: center;
+}
+.shelter-roster-body { border-top: 1px solid #dce3ec; }
+.shelter-roster-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 10px;
+  background: #f6f8fb;
+}
+.shelter-roster-summary span { color: var(--muted); font-size: 9px; }
+.shelter-roster-summary strong { font-size: 10px; }
+.shelter-roster-list { max-height: 240px; overflow: auto; }
+.shelter-roster-list > button {
+  width: 100%;
+  min-height: 45px;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 9px;
+  color: var(--text);
+  background: #fff;
+  border: 0;
+  border-bottom: 1px solid #e4e9ef;
+  cursor: pointer;
+}
+.shelter-roster-list > button:last-child { border-bottom: 0; }
+.shelter-roster-list > button:hover { background: #f6f9fd; }
+.shelter-roster-list > button.is-selected { background: #edf3ff; box-shadow: inset 3px 0 0 var(--blue); }
+.shelter-rank { color: #0f806d; font-size: 10px; font-weight: 900; text-align: left; }
+.shelter-details { min-width: 0; display: grid; gap: 2px; text-align: left; }
+.shelter-details strong { overflow: hidden; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.shelter-details small { color: var(--muted); font-size: 8px; }
+.shelter-cost { color: #344054; font-size: 9px; font-weight: 800; white-space: nowrap; }
+.shelter-roster-empty { margin: 0; padding: 15px 10px; color: var(--muted); font-size: 10px; text-align: center; }
 .map-attribution {
   position: absolute;
   right: 7px;
@@ -706,6 +780,8 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   .pixel-map { width: calc(100vw - 24px); max-width: 700px; }
   .map-place-title { left: 50px; max-width: calc(100% - 62px); }
   .map-place-title span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .shelter-roster { top: 50px; right: 8px; }
+  .shelter-roster.is-open { width: min(270px, calc(100% - 16px)); }
   .hover-readout { right: 8px; }
   .candidate-marker { font-size: 7px; }
   .inspector { display: block; border-top: 1px solid var(--border); }
