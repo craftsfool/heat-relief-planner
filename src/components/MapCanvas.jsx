@@ -74,6 +74,8 @@ export function MapCanvas({
   const canvasRef = useRef(null);
   const [exportStatus, setExportStatus] = useState("idle");
   const activeSubzone = MAP_SUBZONES.find((subzone) => subzone.code === activeSubzoneCode) ?? null;
+  const initialMapScale = activeSubzone ? 1.35 : 0.82;
+  const [mapScale, setMapScale] = useState(initialMapScale);
   const viewBounds = activeSubzone?.bounds ?? {
     minX: 0,
     minY: 0,
@@ -109,6 +111,10 @@ export function MapCanvas({
   const hoveredScore = hoveredInView
     ? scoreCell(hoveredInView, weights, enabled, placed)
     : 0;
+
+  useEffect(() => {
+    setMapScale(initialMapScale);
+  }, [activeSubzoneCode, initialMapScale]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -236,7 +242,7 @@ export function MapCanvas({
       <div className="map-shell" ref={mapShellRef}>
         <TransformWrapper
           key={activeSubzoneCode ?? "queenstown"}
-          initialScale={activeSubzone ? 1.35 : 0.82}
+          initialScale={initialMapScale}
           minScale={0.42}
           maxScale={48}
           centerOnInit
@@ -248,13 +254,14 @@ export function MapCanvas({
           zoomAnimation={{ disabled: true }}
           autoAlignment={{ disabled: true }}
           velocityAnimation={{ disabled: true }}
+          onTransform={(_, state) => setMapScale(state.scale)}
         >
           {({ zoomIn, zoomOut, centerView }) => (
             <>
               <div className="map-zoom-controls" aria-label="Map zoom controls" data-export-ignore="true">
                 <button type="button" title="Zoom in" aria-label="Zoom in" onClick={() => zoomIn(2, 0)}><ZoomIn size={17} /></button>
                 <button type="button" title="Zoom out" aria-label="Zoom out" onClick={() => zoomOut(2, 0)}><ZoomOut size={17} /></button>
-                <button type="button" title="Reset map view" aria-label="Reset map view" onClick={() => centerView(activeSubzone ? 1.35 : 0.82, 0)}><Maximize2 size={16} /></button>
+                <button type="button" title="Reset map view" aria-label="Reset map view" onClick={() => centerView(initialMapScale, 0)}><Maximize2 size={16} /></button>
               </div>
 
               <div className="map-place-title">
@@ -280,6 +287,12 @@ export function MapCanvas({
                     "--map-cell-radius": `${18 / viewColumns}cqw`,
                     "--map-cell-glow": `${12 / viewColumns}cqw`,
                     "--map-cell-outline": `${10 / viewColumns}cqw`,
+                    "--beacon-min-size": `${12 / mapScale}px`,
+                    "--beacon-min-font-size": `${7 / mapScale}px`,
+                    "--beacon-min-border": `${1 / mapScale}px`,
+                    "--beacon-min-radius": `${3 / mapScale}px`,
+                    "--beacon-min-glow": `${2 / mapScale}px`,
+                    "--beacon-min-outline": `${2 / mapScale}px`,
                   }}
                   onMouseMove={(event) => onHover(cellFromPointer(event))}
                   onMouseLeave={() => onHover(null)}
