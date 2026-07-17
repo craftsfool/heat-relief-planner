@@ -284,18 +284,15 @@ export function MapCanvas({
                     "--map-cell-size": `${100 / viewColumns}cqw`,
                     "--beacon-cell-size": `${65 / viewColumns}cqw`,
                     "--map-cell-font-size": `${38 / viewColumns}cqw`,
-                    "--map-cell-border": `${4.5 / viewColumns}cqw`,
                     "--map-cell-radius": `${12 / viewColumns}cqw`,
                     "--map-cell-glow": `${8 / viewColumns}cqw`,
-                    "--map-cell-outline": `${4 / viewColumns}cqw`,
                     "--map-highlight-outline": `${2 / viewColumns}cqw`,
                     "--map-highlight-inset": `${1 / viewColumns}cqw`,
+                    "--map-label-scale": 1 / mapScale,
                     "--beacon-min-size": `${16 / mapScale}px`,
                     "--beacon-min-font-size": `${9 / mapScale}px`,
-                    "--beacon-min-border": `${1.25 / mapScale}px`,
                     "--beacon-min-radius": `${4 / mapScale}px`,
                     "--beacon-min-glow": `${3 / mapScale}px`,
-                    "--beacon-min-outline": `${1 / mapScale}px`,
                   }}
                   onMouseMove={(event) => onHover(cellFromPointer(event))}
                   onMouseLeave={() => onHover(null)}
@@ -357,7 +354,7 @@ export function MapCanvas({
                           onSelect(candidate);
                         }}
                       >
-                        {rank}
+                        <span>{rank}</span>
                       </button>
                     );
                   })}

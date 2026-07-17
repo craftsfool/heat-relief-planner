@@ -403,7 +403,8 @@ button { color: inherit; }
 .subzone-map-label {
   position: absolute;
   z-index: 8;
-  transform: translate(-50%, -50%);
+  transform: translate(-50%, -50%) scale(var(--map-label-scale));
+  transform-origin: center;
   max-width: 100px;
   padding: 3px 4px;
   color: #17293f;
@@ -433,9 +434,9 @@ button { color: inherit; }
   place-items: center;
   padding: 0;
   color: #fff;
-  background: var(--blue);
+  background: #fff;
   overflow: hidden;
-  border: max(var(--map-cell-border), var(--beacon-min-border)) solid #fff;
+  border: 0;
   border-radius: max(var(--map-cell-radius), var(--beacon-min-radius));
   box-shadow: 0 0 max(var(--map-cell-glow), var(--beacon-min-glow)) rgba(16, 52, 117, .5);
   font-size: max(var(--map-cell-font-size), var(--beacon-min-font-size));
@@ -443,14 +444,22 @@ button { color: inherit; }
   font-weight: 800;
   cursor: pointer;
 }
-.map-site-marker.is-station { border-radius: 50%; background: #0f806d; }
+.map-site-marker::before {
+  content: "";
+  position: absolute;
+  inset: 12%;
+  border-radius: 20%;
+  background: var(--blue);
+}
+.map-site-marker > span { position: relative; z-index: 1; }
+.map-site-marker.is-station { border-radius: 50%; }
+.map-site-marker.is-station::before { border-radius: 50%; background: #0f806d; }
 .map-site-marker.is-selected {
   z-index: 17;
-  outline: max(var(--map-cell-outline), var(--beacon-min-outline)) solid #fff;
-  outline-offset: 0;
-  box-shadow: 0 0 0 max(var(--map-cell-outline), var(--beacon-min-outline)) rgba(18, 63, 158, .82);
+  background: #ffd24d;
+  box-shadow: 0 0 max(var(--map-cell-glow), var(--beacon-min-glow)) rgba(18, 63, 158, .72);
 }
-.map-site-marker:focus-visible { outline-width: max(var(--map-cell-outline), var(--beacon-min-outline)); outline-offset: 0; }
+.map-site-marker:focus-visible { outline: 2px solid #ffd24d; outline-offset: 2px; }
 .map-cell-highlight {
   width: var(--map-cell-size);
   height: var(--map-cell-size);
