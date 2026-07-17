@@ -125,13 +125,34 @@ export function MapCanvas({
   const beaconFontSize = Math.min(42, Math.max(9, screenCellSize * 0.38));
   const beaconRadius = Math.min(14, Math.max(4, screenCellSize * 0.12));
   const beaconGlow = Math.min(8, Math.max(3, screenCellSize * 0.08));
+  const devicePixelRatio = window.devicePixelRatio || 1;
+  const snapToDevicePixel = (value) => Math.round(value * devicePixelRatio) / devicePixelRatio;
 
-  const overlayPoint = (x, y, centered = true) => ({
-    left: mapTransform.positionX +
-      ((x - viewBounds.minX + (centered ? 0.5 : 0)) / viewColumns) * scaledMapWidth,
-    top: mapTransform.positionY +
-      ((y - viewBounds.minY + (centered ? 0.5 : 0)) / viewRows) * scaledMapHeight,
-  });
+  const overlayCellRect = (x, y) => {
+    const localX = x - viewBounds.minX;
+    const localY = y - viewBounds.minY;
+    const left = snapToDevicePixel(
+      mapTransform.positionX + (localX / viewColumns) * scaledMapWidth,
+    );
+    const right = snapToDevicePixel(
+      mapTransform.positionX + ((localX + 1) / viewColumns) * scaledMapWidth,
+    );
+    const top = snapToDevicePixel(
+      mapTransform.positionY + (localY / viewRows) * scaledMapHeight,
+    );
+    const bottom = snapToDevicePixel(
+      mapTransform.positionY + ((localY + 1) / viewRows) * scaledMapHeight,
+    );
+    return { left, top, width: right - left, height: bottom - top };
+  };
+
+  const overlayPoint = (x, y) => {
+    const cellRect = overlayCellRect(x, y);
+    return {
+      left: cellRect.left + cellRect.width / 2,
+      top: cellRect.top + cellRect.height / 2,
+    };
+  };
 
   useEffect(() => {
     setMapTransform({ scale: initialMapScale, positionX: 0, positionY: 0 });
@@ -140,14 +161,19 @@ export function MapCanvas({
   useEffect(() => {
     const surface = mapSurfaceRef.current;
     if (!surface) return undefined;
-    const updateSize = () => {
-      const next = { width: surface.offsetWidth, height: surface.offsetHeight };
+    const updateSize = (contentRect) => {
+      const next = contentRect
+        ? { width: contentRect.width, height: contentRect.height }
+        : (() => {
+            const bounds = surface.getBoundingClientRect();
+            return { width: bounds.width / mapScale, height: bounds.height / mapScale };
+          })();
       setMapSurfaceSize((current) => current.width === next.width && current.height === next.height
         ? current
         : next);
     };
     updateSize();
-    const observer = new ResizeObserver(updateSize);
+    const observer = new ResizeObserver(([entry]) => updateSize(entry.contentRect));
     observer.observe(surface);
     return () => observer.disconnect();
   }, [activeSubzoneCode, viewColumns, viewRows]);
@@ -347,7 +373,7 @@ export function MapCanvas({
                     <span
                       className="map-cell-highlight"
                       data-testid="map-cell-highlight"
-                      style={overlayPoint(hoveredInView.x, hoveredInView.y, false)}
+                      style={overlayCellRect(hoveredInView.x, hoveredInView.y)}
                     />
                   )}
 

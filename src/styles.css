@@ -387,7 +387,7 @@ button { color: inherit; }
   position: relative;
   container-type: inline-size;
   overflow: hidden;
-  border: 1px solid #aebbc9;
+  border: 0;
   box-shadow: var(--shadow);
   background: transparent;
   isolation: isolate;
