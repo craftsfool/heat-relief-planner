@@ -468,6 +468,10 @@ button { color: inherit; }
   background: #123f9e;
   box-shadow: 0 0 var(--screen-beacon-glow) rgba(18, 63, 158, .72);
 }
+.map-site-marker.is-station.is-selected {
+  background: #0f806d;
+  box-shadow: 0 0 0 2px #ffd24d, 0 0 var(--screen-beacon-glow) rgba(15, 128, 109, .65);
+}
 .map-site-marker:focus-visible { outline: 2px solid #ffd24d; outline-offset: 2px; }
 .map-cell-highlight {
   width: var(--screen-cell-size);

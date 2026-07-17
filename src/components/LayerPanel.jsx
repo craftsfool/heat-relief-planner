@@ -69,7 +69,7 @@ export function LayerPanel({ layers, candidateCount, weights, enabled, activeLay
               type="button"
               title="Decrease candidate sites"
               aria-label="Decrease candidate sites"
-              disabled={candidateCount <= 6}
+              disabled={candidateCount <= 1}
               onClick={() => onCandidateCount(candidateCount - 1)}
             >
               <Minus size={12} />
@@ -89,13 +89,13 @@ export function LayerPanel({ layers, candidateCount, weights, enabled, activeLay
         <input
           id="candidate-count"
           type="range"
-          min="6"
+          min="1"
           max="20"
           step="1"
           value={candidateCount}
           onChange={(event) => onCandidateCount(Number(event.target.value))}
         />
-        <div className="range-labels"><span>6</span><span>20</span></div>
+        <div className="range-labels"><span>1</span><span>20</span></div>
       </section>
 
       <div className="layer-list">
