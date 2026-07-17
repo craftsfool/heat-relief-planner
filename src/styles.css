@@ -510,11 +510,14 @@ button { color: inherit; }
   animation: greedy-marker-pulse .7s ease-in-out infinite alternate;
 }
 .map-site-marker.is-demo-detail {
-  transform: translate(
-    calc(-50% + var(--screen-cell-size) * .36),
-    calc(-50% - var(--screen-cell-size) * .36)
-  );
+  transform: translate(-50%, -50%);
+  background: rgba(255, 255, 255, .18);
+  border: clamp(2px, calc(var(--screen-cell-size) * .045), 3px) solid #123f9e;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, .92), 0 0 var(--screen-beacon-glow) rgba(18, 63, 158, .78);
 }
+.map-site-marker.is-demo-detail.is-station { border-color: #0f806d; }
+.map-site-marker.is-demo-detail > span { display: none; }
 .map-site-marker:focus-visible { outline: 2px solid #ffd24d; outline-offset: 2px; }
 .map-cell-score {
   position: absolute;
