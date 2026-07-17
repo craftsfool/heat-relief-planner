@@ -3,9 +3,10 @@ import {
   Check,
   Download,
   LoaderCircle,
-  MapPinned,
   Maximize2,
   Play,
+  Trash2,
+  Video,
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
@@ -13,7 +14,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { TransformComponent, TransformWrapper } from "react-zoom-pan-pinch";
 import { toPng } from "html-to-image";
 import { GreedyDemoPanel } from "./GreedyDemoPanel";
-import { ShelterRoster } from "./ShelterRoster";
+import { useDemoRecording } from "../hooks/useDemoRecording";
 import {
   getStationCoverage,
   GRID_COLS,
@@ -91,8 +92,9 @@ export function MapCanvas({
   const transformControlsRef = useRef(null);
   const scoreViewportKeyRef = useRef("");
   const previousDemoOpenRef = useRef(false);
+  const recordingFrameDataRef = useRef(null);
+  const soundedDecisionRef = useRef("");
   const [exportStatus, setExportStatus] = useState("idle");
-  const [isRosterVisible, setIsRosterVisible] = useState(true);
   const [hoveredSubzoneCode, setHoveredSubzoneCode] = useState(null);
   const [scoreCells, setScoreCells] = useState([]);
   const activeSubzone = MAP_SUBZONES.find((subzone) => subzone.code === activeSubzoneCode) ?? null;
@@ -136,6 +138,36 @@ export function MapCanvas({
   );
   const placedIds = useMemo(() => new Set(placed.map((station) => station.id)), [placed]);
   const currentGreedyStep = greedyDemo.steps[greedyDemo.stepIndex] ?? null;
+  recordingFrameDataRef.current = {
+    surfaceSize: mapSurfaceSizeRef.current,
+    viewColumns,
+    viewRows,
+    viewBounds,
+    scoreCells,
+    weights,
+    enabled,
+    placed,
+    visibleCandidates,
+    candidateIndex,
+    currentStep: currentGreedyStep,
+    phase: greedyDemo.phase,
+    mapName: activeSubzone?.name ?? "Queenstown",
+  };
+  const {
+    status: recordingStatus,
+    result: recordingResult,
+    startRecording,
+    stopRecording,
+    cancelRecording,
+    playSelectionSound,
+    saveResult: saveRecording,
+    discardResult: discardRecording,
+  } = useDemoRecording({
+    mapShellRef,
+    canvasRef,
+    mapTransformRef,
+    frameDataRef: recordingFrameDataRef,
+  });
   const hoveredInView = hovered && (!activeSubzone || hovered.subzoneCode === activeSubzone.code)
     ? hovered
     : null;
@@ -344,6 +376,23 @@ export function MapCanvas({
   }, [currentGreedyStep, greedyDemo.open, greedyDemo.phase, greedyDemo.speed, initialMapScale, mapSurfaceSize, viewBounds.minX, viewBounds.minY, viewColumns, viewRows]);
 
   useEffect(() => {
+    if (["idle", "solving"].includes(greedyDemo.phase) || greedyDemo.status === "solving") {
+      soundedDecisionRef.current = "";
+      return;
+    }
+    if (greedyDemo.phase !== "applied" || !currentGreedyStep) return;
+    const decisionKey = `${greedyDemo.stepIndex}:${currentGreedyStep.station.id}`;
+    if (soundedDecisionRef.current === decisionKey) return;
+    soundedDecisionRef.current = decisionKey;
+    void playSelectionSound();
+  }, [currentGreedyStep, greedyDemo.phase, greedyDemo.status, greedyDemo.stepIndex, playSelectionSound]);
+
+  useEffect(() => {
+    if (greedyDemo.status === "complete" && recordingStatus === "recording") stopRecording();
+    if (greedyDemo.status === "error" && recordingStatus === "recording") cancelRecording();
+  }, [cancelRecording, greedyDemo.status, recordingStatus, stopRecording]);
+
+  useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     canvas.width = viewColumns;
@@ -434,6 +483,23 @@ export function MapCanvas({
     }
   };
 
+  const startRecordedGreedyDemo = () => {
+    soundedDecisionRef.current = "";
+    void startRecording();
+    onStartGreedyDemo();
+  };
+
+  const restartRecordedGreedyDemo = () => {
+    soundedDecisionRef.current = "";
+    if (recordingStatus !== "recording") void startRecording();
+    onRestartGreedyDemo();
+  };
+
+  const closeRecordedGreedyDemo = () => {
+    cancelRecording();
+    onCloseGreedyDemo();
+  };
+
   return (
     <main className="map-workspace">
       <div className="map-toolbar">
@@ -458,7 +524,7 @@ export function MapCanvas({
             title="Animate how the greedy algorithm chooses shelter sites"
             aria-label="Start greedy algorithm decision demo"
             disabled={greedyDemo.status === "solving"}
-            onClick={onStartGreedyDemo}
+            onClick={startRecordedGreedyDemo}
           >
             {greedyDemo.status === "solving" ? <LoaderCircle className="is-spinning" size={15} /> : <Play size={15} />}
             <span>{greedyDemo.status === "solving" ? "Preparing" : "Greedy demo"}</span>
@@ -648,37 +714,14 @@ export function MapCanvas({
           }}
         </TransformWrapper>
 
-        <ShelterRoster
-          placed={placed}
-          candidates={candidates}
-          cells={cells}
-          selected={selected}
-          visible={isRosterVisible}
-          onSelect={onSelect}
-          onHide={() => setIsRosterVisible(false)}
-        />
-
-        {!isRosterVisible && (
-          <button
-            className="floating-window-restore"
-            data-export-ignore="true"
-            type="button"
-            title="Show built shelters window"
-            aria-label="Show built shelters window"
-            onClick={() => setIsRosterVisible(true)}
-          >
-            <MapPinned size={16} />
-            <strong>{placed.length}</strong>
-          </button>
-        )}
-
         <GreedyDemoPanel
           demo={greedyDemo}
           currentStep={currentGreedyStep}
+          recordingStatus={recordingStatus}
           onToggle={onToggleGreedyDemo}
           onStep={onStepGreedyDemo}
-          onRestart={onRestartGreedyDemo}
-          onClose={onCloseGreedyDemo}
+          onRestart={restartRecordedGreedyDemo}
+          onClose={closeRecordedGreedyDemo}
           onSpeed={onGreedyDemoSpeed}
         />
 
@@ -702,6 +745,23 @@ export function MapCanvas({
           </div>
         )}
       </div>
+
+      {recordingResult && (
+        <div className="demo-video-dialog-backdrop" role="presentation">
+          <section className="demo-video-dialog" role="dialog" aria-modal="true" aria-labelledby="demo-video-title">
+            <Video size={22} />
+            <div>
+              <span>Greedy demo complete</span>
+              <h2 id="demo-video-title">Save the map recording?</h2>
+              <p>{Math.max(1, Math.round(recordingResult.duration / 1000))} seconds · {(recordingResult.blob.size / 1_048_576).toFixed(1)} MB</p>
+            </div>
+            <div className="demo-video-dialog-actions">
+              <button type="button" className="is-secondary" onClick={discardRecording}><Trash2 size={15} /> Discard</button>
+              <button type="button" className="is-primary" onClick={saveRecording}><Download size={15} /> Save video</button>
+            </div>
+          </section>
+        </div>
+      )}
     </main>
   );
 }

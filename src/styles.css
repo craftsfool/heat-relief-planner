@@ -890,6 +890,138 @@ button { color: inherit; }
   font-size: 9px;
   font-weight: 800;
 }
+.greedy-demo-parameters {
+  width: min(300px, calc(100% - 24px));
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 45;
+  padding: 9px 10px;
+  color: #25364a;
+  background: rgba(255, 255, 255, .94);
+  border: 1px solid #9fb1c3;
+  border-radius: 5px;
+  box-shadow: 0 5px 16px rgba(16, 24, 40, .16);
+  backdrop-filter: blur(5px);
+}
+.greedy-demo-parameters.is-applied { border-color: rgba(15, 128, 109, .65); }
+.greedy-parameter-heading { display: grid; gap: 2px; padding-bottom: 6px; border-bottom: 1px solid #dce3ec; }
+.greedy-parameter-heading span { color: #0f6f60; font-size: 8px; font-weight: 900; text-transform: uppercase; }
+.greedy-parameter-heading strong { overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.greedy-demo-parameters p {
+  min-height: 21px;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid #edf0f4;
+  font-size: 9px;
+}
+.greedy-demo-parameters p:last-child { border-bottom: 0; }
+.greedy-demo-parameters p span { color: #687789; }
+.greedy-demo-parameters p strong { color: #25364a; text-align: right; white-space: nowrap; }
+.greedy-demo-dock {
+  min-height: 36px;
+  position: absolute;
+  left: 54px;
+  bottom: 38px;
+  z-index: 46;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px 5px;
+  background: rgba(255, 255, 255, .96);
+  border: 1px solid #9fb1c3;
+  border-radius: 5px;
+  box-shadow: 0 5px 16px rgba(16, 24, 40, .16);
+}
+.greedy-demo-dock > button {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  color: #526173;
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.greedy-demo-dock > button:hover:not(:disabled) { color: var(--blue); background: #e8eef6; }
+.greedy-demo-dock > button:disabled { color: #b8c1cc; cursor: not-allowed; }
+.greedy-demo-dock label { display: inline-flex; align-items: center; gap: 5px; color: #687789; font-size: 8px; font-weight: 800; }
+.greedy-demo-dock select {
+  height: 27px;
+  padding: 0 20px 0 6px;
+  color: #29415e;
+  background: #fff;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  font-size: 9px;
+  font-weight: 800;
+}
+.greedy-recording-state {
+  min-width: 34px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 4px;
+  color: #526173;
+  font-size: 8px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+.greedy-recording-state.is-recording { color: #b42318; }
+.greedy-recording-state.is-recording::before {
+  width: 7px;
+  height: 7px;
+  content: "";
+  background: #d92d20;
+  border-radius: 50%;
+  animation: recording-pulse 1s ease-in-out infinite alternate;
+}
+.demo-video-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(15, 23, 34, .46);
+}
+.demo-video-dialog {
+  width: min(390px, 100%);
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  gap: 10px;
+  padding: 16px;
+  color: #25364a;
+  background: #fff;
+  border: 1px solid #9fb1c3;
+  border-radius: 6px;
+  box-shadow: 0 16px 40px rgba(16, 24, 40, .28);
+}
+.demo-video-dialog > svg { color: #0f806d; }
+.demo-video-dialog span { color: #0f806d; font-size: 8px; font-weight: 900; text-transform: uppercase; }
+.demo-video-dialog h2 { margin: 2px 0 4px; font-size: 17px; letter-spacing: 0; }
+.demo-video-dialog p { margin: 0; color: #687789; font-size: 10px; }
+.demo-video-dialog-actions { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 7px; padding-top: 4px; }
+.demo-video-dialog-actions button {
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 11px;
+  border: 1px solid #c5cfda;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.demo-video-dialog-actions .is-secondary { color: #425466; background: #fff; }
+.demo-video-dialog-actions .is-primary { color: #fff; background: var(--blue); border-color: var(--blue); }
+@keyframes recording-pulse { from { opacity: .4; } to { opacity: 1; } }
 .map-attribution {
   position: absolute;
   right: 7px;
@@ -1081,9 +1213,9 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   .canvas-map { width: calc(100vw - 24px); max-width: 720px; }
   .map-place-title { left: 50px; max-width: calc(100% - 62px); }
   .map-place-title span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .shelter-roster { top: 50px; right: 8px; }
-  .shelter-roster.is-open { width: min(270px, calc(100% - 16px)); }
-  .greedy-demo-panel { left: 48px; bottom: 38px; width: min(340px, calc(100% - 56px)); }
+  .greedy-demo-parameters { top: 8px; right: 8px; width: min(300px, calc(100% - 16px)); }
+  .greedy-demo-dock { left: 50px; bottom: 8px; max-width: calc(100% - 58px); }
+  .greedy-recording-state { min-width: 0; }
   .hover-readout { right: 8px; }
   .subzone-map-label { max-width: 92px; padding: 4px; font-size: 7px; }
   .inspector { display: block; border-top: 1px solid var(--border); }
