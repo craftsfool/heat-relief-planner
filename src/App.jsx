@@ -14,6 +14,7 @@ import {
   buildCity,
   generateRandomSolution,
   getCellMetrics,
+  getPopulationReached,
   getPriorityReduction,
   getStationCoverage,
   rankChallengeSites,
@@ -98,6 +99,10 @@ export default function App() {
   const gameScore = useMemo(
     () => getPriorityReduction(planningCells, placed, weights, enabled),
     [enabled, placed, planningCells, weights],
+  );
+  const populationScore = useMemo(
+    () => getPopulationReached(planningCells, placed),
+    [placed, planningCells],
   );
   const placedIds = useMemo(() => new Set(placed.map((station) => station.id)), [placed]);
   const cheapestRemainingCost = visibleCandidates.reduce((minimum, candidate) => {
@@ -314,7 +319,7 @@ export default function App() {
         score={selectedScore}
         budget={budget}
         placedCount={placed.length}
-        gameScore={gameScore}
+        populationScore={populationScore}
         candidateRank={candidateRank}
         candidateCount={visibleCandidates.length}
         budgetLocked={budgetLocked}
