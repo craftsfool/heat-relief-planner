@@ -84,7 +84,7 @@ const drawRecordingFrame = (context, width, height, sourceCanvas, transform, dat
     context.fillText(String(data.candidateIndex.get(candidate.id) ?? ""), centerX, centerY);
   }
 
-  const title = `${data.mapName} · 20 m grid`;
+  const title = `${data.mapName} · 20 m grid${data.tourLabel ? ` · ${data.tourLabel}` : ""}`;
   context.font = "700 11px Arial, sans-serif";
   const titleWidth = context.measureText(title).width + 18;
   context.fillStyle = "rgba(255,255,255,.9)";
@@ -145,16 +145,23 @@ export function useDemoRecording({ mapShellRef, canvasRef, mapTransformRef, fram
   const [status, setStatus] = useState("idle");
   const [result, setResult] = useState(null);
   const recorderRef = useRef(null);
+  const decisionRecorderRef = useRef(null);
   const streamRef = useRef(null);
   const recordingCanvasRef = useRef(null);
   const animationFrameRef = useRef(0);
   const chunksRef = useRef([]);
+  const decisionChunksRef = useRef([]);
   const startedAtRef = useRef(0);
+  const decisionStartedAtRef = useRef(0);
   const stopTimerRef = useRef(0);
   const suppressResultRef = useRef(false);
+  const fullStoppedRef = useRef(false);
+  const decisionStoppedRef = useRef(true);
+  const decisionExpectedRef = useRef(false);
+  const mimeTypeRef = useRef("");
   const audioContextRef = useRef(null);
   const audioDestinationRef = useRef(null);
-  const resultUrlRef = useRef("");
+  const resultUrlsRef = useRef([]);
 
   const ensureAudio = useCallback(async () => {
     const AudioContext = window.AudioContext || window.webkitAudioContext;
@@ -170,8 +177,8 @@ export function useDemoRecording({ mapShellRef, canvasRef, mapTransformRef, fram
   }, []);
 
   const discardResult = useCallback(() => {
-    if (resultUrlRef.current) URL.revokeObjectURL(resultUrlRef.current);
-    resultUrlRef.current = "";
+    resultUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
+    resultUrlsRef.current = [];
     setResult(null);
     setStatus("idle");
   }, []);
@@ -184,7 +191,47 @@ export function useDemoRecording({ mapShellRef, canvasRef, mapTransformRef, fram
     recordingCanvasRef.current?.remove();
     recordingCanvasRef.current = null;
     recorderRef.current = null;
+    decisionRecorderRef.current = null;
   }, []);
+
+  const finalizeRecording = useCallback(() => {
+    if (!fullStoppedRef.current) return;
+    if (decisionExpectedRef.current && !decisionStoppedRef.current) return;
+
+    const duration = Date.now() - startedAtRef.current;
+    const chunks = chunksRef.current;
+    const decisionChunks = decisionChunksRef.current;
+    const decisionDuration = decisionStartedAtRef.current
+      ? Date.now() - decisionStartedAtRef.current
+      : 0;
+    const mimeType = mimeTypeRef.current || "video/webm";
+    cleanStream();
+    if (suppressResultRef.current || !chunks.length) {
+      setStatus("idle");
+      return;
+    }
+
+    const blob = new Blob(chunks, { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const decisionBlob = decisionChunks.length
+      ? new Blob(decisionChunks, { type: mimeType })
+      : null;
+    const decisionUrl = decisionBlob ? URL.createObjectURL(decisionBlob) : "";
+    resultUrlsRef.current = [url, decisionUrl].filter(Boolean);
+    setResult({
+      blob,
+      duration,
+      mimeType: blob.type,
+      url,
+      withoutIntro: decisionBlob ? {
+        blob: decisionBlob,
+        duration: decisionDuration,
+        mimeType: decisionBlob.type,
+        url: decisionUrl,
+      } : null,
+    });
+    setStatus("ready");
+  }, [cleanStream]);
 
   const startRecording = useCallback(async () => {
     if (recorderRef.current && recorderRef.current.state !== "inactive") return true;
@@ -241,57 +288,83 @@ export function useDemoRecording({ mapShellRef, canvasRef, mapTransformRef, fram
       return false;
     }
     chunksRef.current = [];
+    decisionChunksRef.current = [];
     suppressResultRef.current = false;
+    fullStoppedRef.current = false;
+    decisionStoppedRef.current = true;
+    decisionExpectedRef.current = false;
+    decisionStartedAtRef.current = 0;
+    mimeTypeRef.current = mimeType || "video/webm";
     startedAtRef.current = Date.now();
     recorder.ondataavailable = (event) => {
       if (event.data.size) chunksRef.current.push(event.data);
     };
     recorder.onstop = () => {
-      const duration = Date.now() - startedAtRef.current;
-      const chunks = chunksRef.current;
-      cleanStream();
-      if (suppressResultRef.current || !chunks.length) {
-        setStatus("idle");
-        return;
-      }
-      const blob = new Blob(chunks, { type: mimeType || "video/webm" });
-      const url = URL.createObjectURL(blob);
-      resultUrlRef.current = url;
-      setResult({
-        blob,
-        duration,
-        mimeType: blob.type,
-        url,
-      });
-      setStatus("ready");
+      fullStoppedRef.current = true;
+      finalizeRecording();
     };
     recorderRef.current = recorder;
     streamRef.current = stream;
     recorder.start(500);
     setStatus("recording");
     return true;
-  }, [canvasRef, cleanStream, discardResult, ensureAudio, frameDataRef, mapShellRef, mapTransformRef]);
+  }, [canvasRef, cleanStream, discardResult, ensureAudio, finalizeRecording, frameDataRef, mapShellRef, mapTransformRef]);
+
+  const startDecisionRecording = useCallback(() => {
+    if (decisionRecorderRef.current) return true;
+    const stream = streamRef.current;
+    if (!stream || recorderRef.current?.state !== "recording") return false;
+
+    let recorder;
+    try {
+      const mimeType = mimeTypeRef.current;
+      recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+    } catch {
+      return false;
+    }
+    decisionChunksRef.current = [];
+    decisionExpectedRef.current = true;
+    decisionStoppedRef.current = false;
+    decisionStartedAtRef.current = Date.now();
+    recorder.ondataavailable = (event) => {
+      if (event.data.size) decisionChunksRef.current.push(event.data);
+    };
+    recorder.onstop = () => {
+      decisionStoppedRef.current = true;
+      finalizeRecording();
+    };
+    decisionRecorderRef.current = recorder;
+    recorder.start(500);
+    return true;
+  }, [finalizeRecording]);
 
   const stopRecording = useCallback(() => {
     const recorder = recorderRef.current;
     if (!recorder || recorder.state === "inactive") return;
     suppressResultRef.current = false;
     setStatus("processing");
-    try {
-      recorder.requestData();
-    } catch {
-      // Some MediaRecorder implementations only emit data during stop.
-    }
+    [recorder, decisionRecorderRef.current].filter(Boolean).forEach((activeRecorder) => {
+      try {
+        activeRecorder.requestData();
+      } catch {
+        // Some MediaRecorder implementations only emit data during stop.
+      }
+    });
     window.clearTimeout(stopTimerRef.current);
     stopTimerRef.current = window.setTimeout(() => {
-      if (recorder.state !== "inactive") recorder.stop();
+      [recorder, decisionRecorderRef.current].filter(Boolean).forEach((activeRecorder) => {
+        if (activeRecorder.state !== "inactive") activeRecorder.stop();
+      });
     }, 120);
   }, []);
 
   const cancelRecording = useCallback(() => {
     const recorder = recorderRef.current;
+    const decisionRecorder = decisionRecorderRef.current;
     suppressResultRef.current = true;
-    if (recorder && recorder.state !== "inactive") recorder.stop();
+    const activeRecorders = [recorder, decisionRecorder]
+      .filter((activeRecorder) => activeRecorder && activeRecorder.state !== "inactive");
+    if (activeRecorders.length) activeRecorders.forEach((activeRecorder) => activeRecorder.stop());
     else cleanStream();
     setStatus("idle");
   }, [cleanStream]);
@@ -322,12 +395,14 @@ export function useDemoRecording({ mapShellRef, canvasRef, mapTransformRef, fram
     });
   }, [ensureAudio]);
 
-  const saveResult = useCallback(() => {
+  const saveResult = useCallback((includeIntro = true) => {
     if (!result) return;
-    const extension = result.mimeType.includes("mp4") ? "mp4" : "webm";
+    const selectedResult = includeIntro || !result.withoutIntro ? result : result.withoutIntro;
+    const extension = selectedResult.mimeType.includes("mp4") ? "mp4" : "webm";
     const link = document.createElement("a");
-    link.href = result.url;
-    link.download = `heat-relief-greedy-demo-${new Date().toISOString().slice(0, 19).replaceAll(":", "-")}.${extension}`;
+    link.href = selectedResult.url;
+    const suffix = includeIntro || !result.withoutIntro ? "" : "-no-intro";
+    link.download = `heat-relief-greedy-demo${suffix}-${new Date().toISOString().slice(0, 19).replaceAll(":", "-")}.${extension}`;
     link.click();
     discardResult();
   }, [discardResult, result]);
@@ -337,7 +412,7 @@ export function useDemoRecording({ mapShellRef, canvasRef, mapTransformRef, fram
     window.cancelAnimationFrame(animationFrameRef.current);
     streamRef.current?.getTracks().forEach((track) => track.stop());
     recordingCanvasRef.current?.remove();
-    if (resultUrlRef.current) URL.revokeObjectURL(resultUrlRef.current);
+    resultUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
     audioContextRef.current?.close();
   }, []);
 
@@ -345,6 +420,7 @@ export function useDemoRecording({ mapShellRef, canvasRef, mapTransformRef, fram
     status,
     result,
     startRecording,
+    startDecisionRecording,
     stopRecording,
     cancelRecording,
     playSelectionSound,

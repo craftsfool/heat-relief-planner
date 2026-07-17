@@ -12,7 +12,7 @@ The base grid uses the URA Master Plan 2019 planning-area boundary and OpenStree
 - Budget-based station placement scored by priority reduction on accessible land
 - Greedy construction with local-search improvements for optimized strategies
 - Replayable greedy-decision animation with compact parameters, score-labelled close-ups, and map-overview intervals
-- Automatic map demo recording with synchronized decision parameters, a completion save prompt, and shelter-selection audio cues
+- Automatic map demo recording with a scored six-layer map tour, synchronized decision parameters, optional intro-free export, and shelter-selection audio cues
 - Marginal shelter effects that do not stack below a cell score of zero
 - Candidate ranking and site-level score breakdowns
 

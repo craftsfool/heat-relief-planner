@@ -25,6 +25,7 @@ export function GreedyDemoPanel({
   if (!demo.open) return null;
 
   const isPlaying = demo.status === "playing";
+  const isIntro = demo.phase === "intro";
   const canAdvance = demo.steps.length > 0 && !["solving", "complete", "error"].includes(demo.status);
   const showParameters = currentStep && ["focus", "applied"].includes(demo.phase);
 
@@ -45,26 +46,30 @@ export function GreedyDemoPanel({
 
       <div className="greedy-demo-dock" aria-label="Greedy demo playback controls">
         <span className={`greedy-recording-state is-${recordingStatus}`}>
-          {demo.status === "solving" ? <><LoaderCircle className="is-spinning" size={12} /> Preparing</> : RECORDING_LABELS[recordingStatus] ?? "Demo"}
+          {demo.status === "solving"
+            ? <><LoaderCircle className="is-spinning" size={12} /> Preparing</>
+            : isIntro && recordingStatus === "recording"
+              ? "REC · Tour"
+              : RECORDING_LABELS[recordingStatus] ?? "Demo"}
         </span>
         <button
           type="button"
           title={isPlaying ? "Pause animation" : "Play animation"}
           aria-label={isPlaying ? "Pause greedy animation" : "Play greedy animation"}
-          disabled={!demo.steps.length || demo.status === "solving"}
+          disabled={!demo.steps.length || demo.status === "solving" || isIntro}
           onClick={onToggle}
         >
           {isPlaying ? <Pause size={14} /> : <Play size={14} />}
         </button>
-        <button type="button" title="Advance demo phase" aria-label="Advance greedy demo phase" disabled={!canAdvance || isPlaying} onClick={onStep}>
+        <button type="button" title="Advance demo phase" aria-label="Advance greedy demo phase" disabled={!canAdvance || isPlaying || isIntro} onClick={onStep}>
           <SkipForward size={14} />
         </button>
-        <button type="button" title="Replay from the first decision" aria-label="Replay greedy animation" disabled={!demo.steps.length} onClick={onRestart}>
+        <button type="button" title="Replay from the first decision" aria-label="Replay greedy animation" disabled={!demo.steps.length || isIntro} onClick={onRestart}>
           <RotateCcw size={14} />
         </button>
         <label>
           <span>Speed</span>
-          <select value={demo.speed} onChange={(event) => onSpeed(Number(event.target.value))}>
+          <select value={demo.speed} disabled={isIntro} onChange={(event) => onSpeed(Number(event.target.value))}>
             <option value={0.5}>0.5x</option>
             <option value={1}>1x</option>
             <option value={2}>2x</option>

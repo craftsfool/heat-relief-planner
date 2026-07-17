@@ -155,6 +155,8 @@ export default function App() {
   const advanceGreedyDemo = () => {
     if (!greedyDemo.steps.length) return;
 
+    if (greedyDemo.phase === "intro") return;
+
     if (greedyDemo.phase === "focus") {
       setPlaced(greedyDemo.steps.slice(0, greedyDemo.stepIndex + 1).map((step) => step.station));
       setGreedyDemo((current) => ({ ...current, phase: "applied" }));
@@ -184,6 +186,7 @@ export default function App() {
 
   useEffect(() => {
     if (greedyDemo.status !== "playing" || !greedyDemo.steps.length) return undefined;
+    if (greedyDemo.phase === "intro") return undefined;
     const phaseDelay = {
       idle: 650,
       focus: 1450,
@@ -235,7 +238,7 @@ export default function App() {
         status: steps.length ? "playing" : "complete",
         steps,
         stepIndex: -1,
-        phase: "idle",
+        phase: steps.length ? "intro" : "overview",
         error: null,
       }));
     } catch (error) {
@@ -253,7 +256,7 @@ export default function App() {
       setPlaced([]);
       setSelectedId(visibleCandidates[0]?.id ?? null);
       setRadius(150);
-      setGreedyDemo((current) => ({ ...current, status: "playing", stepIndex: -1, phase: "idle" }));
+      setGreedyDemo((current) => ({ ...current, status: "playing", stepIndex: -1, phase: "intro" }));
       return;
     }
     setGreedyDemo((current) => ({
@@ -266,7 +269,13 @@ export default function App() {
     setPlaced([]);
     setSelectedId(visibleCandidates[0]?.id ?? null);
     setRadius(150);
-    setGreedyDemo((current) => ({ ...current, status: "playing", stepIndex: -1, phase: "idle" }));
+    setGreedyDemo((current) => ({ ...current, status: "playing", stepIndex: -1, phase: "intro" }));
+  };
+
+  const completeGreedyIntro = () => {
+    setGreedyDemo((current) => current.phase === "intro"
+      ? { ...current, phase: "idle" }
+      : current);
   };
 
   const clearPlan = () => {
@@ -458,6 +467,7 @@ export default function App() {
           onToggleGreedyDemo={toggleGreedyDemo}
           onStepGreedyDemo={advanceGreedyDemo}
           onRestartGreedyDemo={restartGreedyDemo}
+          onCompleteGreedyIntro={completeGreedyIntro}
           onCloseGreedyDemo={closeGreedyDemo}
           onGreedyDemoSpeed={(speed) => setGreedyDemo((current) => ({ ...current, speed }))}
         />

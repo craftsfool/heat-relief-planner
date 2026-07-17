@@ -38,7 +38,16 @@ const BASE_COLORS = {
 
 const SCORE_LABEL_MIN_CELL_PX = 28;
 const DEMO_TARGET_CELL_PX = 56;
+const DEMO_INTRO_CELL_PX = 34;
 const MAX_MAP_SCALE = 48;
+const DEMO_INTRO_VIEWS = [
+  { mode: "base", layer: "heat", label: "Base map" },
+  { mode: "single", layer: "heat", label: "Heat exposure" },
+  { mode: "single", layer: "vulnerable", label: "Vulnerable population" },
+  { mode: "single", layer: "flow", label: "Pedestrian flow" },
+  { mode: "single", layer: "cooling", label: "Existing cooling facilities" },
+  { mode: "composite", layer: "heat", label: "Composite" },
+];
 
 const hexToRgb = (hex) => {
   const value = Number.parseInt(hex.slice(1), 16);
@@ -82,6 +91,7 @@ export function MapCanvas({
   onToggleGreedyDemo,
   onStepGreedyDemo,
   onRestartGreedyDemo,
+  onCompleteGreedyIntro,
   onCloseGreedyDemo,
   onGreedyDemoSpeed,
 }) {
@@ -94,9 +104,15 @@ export function MapCanvas({
   const previousDemoOpenRef = useRef(false);
   const recordingFrameDataRef = useRef(null);
   const soundedDecisionRef = useRef("");
+  const introRunRef = useRef(0);
   const [exportStatus, setExportStatus] = useState("idle");
   const [hoveredSubzoneCode, setHoveredSubzoneCode] = useState(null);
   const [scoreCells, setScoreCells] = useState([]);
+  const [demoIntro, setDemoIntro] = useState({ active: false, stageIndex: 0 });
+  const [includeRecordingIntro, setIncludeRecordingIntro] = useState(true);
+  const introView = demoIntro.active ? DEMO_INTRO_VIEWS[demoIntro.stageIndex] : null;
+  const renderedMode = introView?.mode ?? mode;
+  const renderedActiveLayer = introView?.layer ?? activeLayer;
   const activeSubzone = MAP_SUBZONES.find((subzone) => subzone.code === activeSubzoneCode) ?? null;
   const initialMapScale = activeSubzone ? 1.35 : 0.82;
   const mapTransformRef = useRef({
@@ -154,11 +170,13 @@ export function MapCanvas({
     totalSteps: greedyDemo.steps.length,
     phase: greedyDemo.phase,
     mapName: activeSubzone?.name ?? "Queenstown",
+    tourLabel: introView?.label ?? "",
   };
   const {
     status: recordingStatus,
     result: recordingResult,
     startRecording,
+    startDecisionRecording,
     stopRecording,
     cancelRecording,
     playSelectionSound,
@@ -170,6 +188,9 @@ export function MapCanvas({
     mapTransformRef,
     frameDataRef: recordingFrameDataRef,
   });
+  const selectedRecordingResult = includeRecordingIntro || !recordingResult?.withoutIntro
+    ? recordingResult
+    : recordingResult.withoutIntro;
   const hoveredInView = hovered && (!activeSubzone || hovered.subzoneCode === activeSubzone.code)
     ? hovered
     : null;
@@ -338,6 +359,134 @@ export function MapCanvas({
   }, [mapSurfaceSize, activeSubzoneCode, hoveredInView, hoveredSubzoneCode, scoreCells, visibleCandidates]);
 
   useEffect(() => {
+    if (greedyDemo.phase !== "intro") {
+      introRunRef.current += 1;
+      setDemoIntro((current) => current.active ? { active: false, stageIndex: 0 } : current);
+      return undefined;
+    }
+
+    const controls = transformControlsRef.current;
+    const shell = mapShellRef.current;
+    const surfaceSize = mapSurfaceSizeRef.current;
+    if (!controls || !shell || !surfaceSize.width || !surfaceSize.height) return undefined;
+
+    const runId = introRunRef.current + 1;
+    introRunRef.current = runId;
+    const timers = [];
+    const schedule = (callback, delay) => {
+      const timer = window.setTimeout(() => {
+        if (introRunRef.current === runId) callback();
+      }, delay);
+      timers.push(timer);
+    };
+
+    const runIntro = async () => {
+      await startRecording();
+      if (introRunRef.current !== runId) return;
+
+      const baseCellSize = Math.min(
+        surfaceSize.width / viewColumns,
+        surfaceSize.height / viewRows,
+      );
+      const targetScale = Math.min(
+        MAX_MAP_SCALE,
+        Math.max(initialMapScale, DEMO_INTRO_CELL_PX / baseCellSize),
+      );
+      const scaledWidth = surfaceSize.width * targetScale;
+      const scaledHeight = surfaceSize.height * targetScale;
+      const screenCellWidth = scaledWidth / viewColumns;
+      const screenCellHeight = scaledHeight / viewRows;
+      let minLocalX = viewColumns - 1;
+      let maxLocalX = 0;
+      let minLocalY = viewRows - 1;
+      let maxLocalY = 0;
+      for (const cell of viewCells) {
+        const localX = cell.x - viewBounds.minX;
+        const localY = cell.y - viewBounds.minY;
+        minLocalX = Math.min(minLocalX, localX);
+        maxLocalX = Math.max(maxLocalX, localX);
+        minLocalY = Math.min(minLocalY, localY);
+        maxLocalY = Math.max(maxLocalY, localY);
+      }
+      const horizontalSpan = Math.max(1, maxLocalX - minLocalX + 1);
+      const edgeBand = Math.max(4, Math.round(horizontalSpan * 0.14));
+      let leftYTotal = 0;
+      let leftCount = 0;
+      let rightYTotal = 0;
+      let rightCount = 0;
+      for (const cell of viewCells) {
+        const localX = cell.x - viewBounds.minX;
+        const localY = cell.y - viewBounds.minY + 0.5;
+        if (localX <= minLocalX + edgeBand) {
+          leftYTotal += localY;
+          leftCount += 1;
+        }
+        if (localX >= maxLocalX - edgeBand) {
+          rightYTotal += localY;
+          rightCount += 1;
+        }
+      }
+      const fallbackCenterY = (minLocalY + maxLocalY + 1) / 2;
+      const leftCenterY = leftCount ? leftYTotal / leftCount : fallbackCenterY;
+      const rightCenterY = rightCount ? rightYTotal / rightCount : fallbackCenterY;
+      const margin = 18;
+      const contentWidth = horizontalSpan * screenCellWidth;
+      const startX = contentWidth > shell.clientWidth
+        ? margin - minLocalX * screenCellWidth
+        : (shell.clientWidth - contentWidth) / 2 - minLocalX * screenCellWidth;
+      const endX = contentWidth > shell.clientWidth
+        ? shell.clientWidth - margin - (maxLocalX + 1) * screenCellWidth
+        : startX;
+      const startY = shell.clientHeight / 2 - leftCenterY * screenCellHeight;
+      const endY = shell.clientHeight / 2 - rightCenterY * screenCellHeight;
+      const zoomDuration = Math.round(650 / greedyDemo.speed);
+      const stageDuration = Math.round(900 / greedyDemo.speed);
+      const panDelay = zoomDuration + Math.round(100 / greedyDemo.speed);
+      const panDuration = stageDuration * DEMO_INTRO_VIEWS.length;
+      const returnDuration = Math.round(680 / greedyDemo.speed);
+
+      setDemoIntro({ active: true, stageIndex: 0 });
+      controls.setTransform(
+        startX,
+        startY,
+        targetScale,
+        zoomDuration,
+        "easeInOutCubic",
+      );
+
+      schedule(() => {
+        controls.setTransform(
+          endX,
+          endY,
+          targetScale,
+          panDuration,
+          "easeInOutCubic",
+        );
+      }, panDelay);
+
+      DEMO_INTRO_VIEWS.forEach((_, stageIndex) => {
+        schedule(() => setDemoIntro({ active: true, stageIndex }), panDelay + stageIndex * stageDuration);
+      });
+
+      const returnAt = panDelay + panDuration;
+      schedule(() => {
+        controls.centerView(initialMapScale, returnDuration, "easeInOutCubic");
+      }, returnAt);
+      schedule(() => {
+        setDemoIntro({ active: false, stageIndex: 0 });
+        startDecisionRecording();
+        onCompleteGreedyIntro();
+      }, returnAt + returnDuration + Math.round(120 / greedyDemo.speed));
+    };
+
+    void runIntro();
+    return () => {
+      timers.forEach((timer) => window.clearTimeout(timer));
+      if (introRunRef.current === runId) introRunRef.current += 1;
+    };
+  }, [greedyDemo.phase, greedyDemo.speed, initialMapScale, mapSurfaceSize, onCompleteGreedyIntro, startDecisionRecording, startRecording, viewBounds.minX, viewBounds.minY, viewCells, viewColumns, viewRows]);
+
+  useEffect(() => {
     const controls = transformControlsRef.current;
     const shell = mapShellRef.current;
     const surfaceSize = mapSurfaceSizeRef.current;
@@ -395,16 +544,20 @@ export function MapCanvas({
   }, [cancelRecording, greedyDemo.status, recordingStatus, stopRecording]);
 
   useEffect(() => {
+    if (recordingResult) setIncludeRecordingIntro(true);
+  }, [recordingResult]);
+
+  useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     canvas.width = viewColumns;
     canvas.height = viewRows;
     const context = canvas.getContext("2d", { alpha: true });
     const image = context.createImageData(viewColumns, viewRows);
-    const visibleLayers = mode === "base"
+    const visibleLayers = renderedMode === "base"
       ? []
-      : mode === "single"
-        ? layers.filter((layer) => layer.id === activeLayer)
+      : renderedMode === "single"
+        ? layers.filter((layer) => layer.id === renderedActiveLayer)
         : layers;
     const maxCompositeWeight = Math.max(
       0,
@@ -420,7 +573,7 @@ export function MapCanvas({
       for (const layer of visibleLayers) {
         if (!enabled[layer.id]) continue;
         const intensity = cell[layer.id];
-        const opacity = mode === "single"
+        const opacity = renderedMode === "single"
           ? Math.min(0.74, 0.08 + intensity * 0.66)
           : maxCompositeWeight > 0 && weights[layer.id] > 0
             ? Math.min(
@@ -446,7 +599,7 @@ export function MapCanvas({
     }
 
     context.putImageData(image, 0, 0);
-  }, [activeLayer, enabled, layers, mode, placed, viewBounds.minX, viewBounds.minY, viewCells, viewColumns, viewRows, weights]);
+  }, [enabled, layers, placed, renderedActiveLayer, renderedMode, viewBounds.minX, viewBounds.minY, viewCells, viewColumns, viewRows, weights]);
 
   const cellFromPointer = (event) => {
     const bounds = event.currentTarget.getBoundingClientRect();
@@ -487,13 +640,12 @@ export function MapCanvas({
 
   const startRecordedGreedyDemo = () => {
     soundedDecisionRef.current = "";
-    void startRecording();
     onStartGreedyDemo();
   };
 
   const restartRecordedGreedyDemo = () => {
     soundedDecisionRef.current = "";
-    if (recordingStatus !== "recording") void startRecording();
+    if (["recording", "processing"].includes(recordingStatus)) cancelRecording();
     onRestartGreedyDemo();
   };
 
@@ -506,14 +658,14 @@ export function MapCanvas({
     <main className="map-workspace">
       <div className="map-toolbar">
         <div className="segmented-control" aria-label="Map view mode">
-          <button className={mode === "composite" ? "is-selected" : ""} onClick={() => onMode("composite")} type="button">Composite</button>
-          <button className={mode === "single" ? "is-selected" : ""} onClick={() => onMode("single")} type="button">Single layer</button>
-          <button className={mode === "base" ? "is-selected" : ""} onClick={() => onMode("base")} type="button">Base map</button>
+          <button className={renderedMode === "composite" ? "is-selected" : ""} disabled={demoIntro.active} onClick={() => onMode("composite")} type="button">Composite</button>
+          <button className={renderedMode === "single" ? "is-selected" : ""} disabled={demoIntro.active} onClick={() => onMode("single")} type="button">Single layer</button>
+          <button className={renderedMode === "base" ? "is-selected" : ""} disabled={demoIntro.active} onClick={() => onMode("base")} type="button">Base map</button>
         </div>
 
         <div className="map-toolbar-meta">
           <div className="map-legend" aria-label="Score intensity legend">
-            <span>{mode === "single" ? layers.find((layer) => layer.id === activeLayer)?.label : "Layer intensity"}</span>
+            <span>{introView?.label ?? (renderedMode === "single" ? layers.find((layer) => layer.id === renderedActiveLayer)?.label : "Layer intensity")}</span>
             <div className="legend-steps">
               {[0.16, 0.3, 0.44, 0.58, 0.72].map((opacity) => <i key={opacity} style={{ opacity }} />)}
             </div>
@@ -755,11 +907,23 @@ export function MapCanvas({
             <div>
               <span>Greedy demo complete</span>
               <h2 id="demo-video-title">Save the map recording?</h2>
-              <p>{Math.max(1, Math.round(recordingResult.duration / 1000))} seconds · {(recordingResult.blob.size / 1_048_576).toFixed(1)} MB</p>
+              <p>{Math.max(1, Math.round(selectedRecordingResult.duration / 1000))} seconds · {(selectedRecordingResult.blob.size / 1_048_576).toFixed(1)} MB</p>
             </div>
+            <label className="demo-video-intro-option">
+              <input
+                type="checkbox"
+                checked={includeRecordingIntro}
+                disabled={!recordingResult.withoutIntro}
+                onChange={(event) => setIncludeRecordingIntro(event.target.checked)}
+              />
+              <span>
+                <strong>Include map tour intro</strong>
+                <small>Left-to-right score and layer overview</small>
+              </span>
+            </label>
             <div className="demo-video-dialog-actions">
               <button type="button" className="is-secondary" onClick={discardRecording}><Trash2 size={15} /> Discard</button>
-              <button type="button" className="is-primary" onClick={saveRecording}><Download size={15} /> Save video</button>
+              <button type="button" className="is-primary" onClick={() => saveRecording(includeRecordingIntro)}><Download size={15} /> Save video</button>
             </div>
           </section>
         </div>
