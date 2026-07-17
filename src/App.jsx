@@ -14,14 +14,13 @@ import {
   buildCity,
   generateRandomSolution,
   getCellMetrics,
-  getPopulationReached,
+  getPriorityReduction,
   getStationCoverage,
   rankChallengeSites,
   scoreCell,
   selectChallengeSites,
-  selectGlobalCandidatePool,
 } from "./model/cityModel";
-import { generateOptimalSolution } from "./model/optimalSolution";
+import { generateGreedyLocalSolution } from "./model/greedyLocalSolution";
 
 const STARTING_BUDGET = 2_500_000;
 const DEFAULT_CANDIDATE_COUNT = 12;
@@ -96,9 +95,9 @@ export default function App() {
   const spent = placed.reduce((sum, station) => sum + station.cost, 0);
   const budget = STARTING_BUDGET - spent;
   const isPlaced = placed.some((station) => station.id === selected?.id);
-  const populationScore = useMemo(
-    () => getPopulationReached(planningCells, placed),
-    [planningCells, placed],
+  const gameScore = useMemo(
+    () => getPriorityReduction(planningCells, placed, weights, enabled),
+    [enabled, placed, planningCells, weights],
   );
   const placedIds = useMemo(() => new Set(placed.map((station) => station.id)), [placed]);
   const cheapestRemainingCost = visibleCandidates.reduce((minimum, candidate) => {
@@ -106,11 +105,11 @@ export default function App() {
     return Math.min(minimum, getCellMetrics(candidate, STATION_RADII[0], planningCells).cost);
   }, Number.POSITIVE_INFINITY);
   const budgetLocked = visibleCandidates.length > 0 && budget < cheapestRemainingCost;
-  const populationImpact = useMemo(() => {
+  const scoreImpact = useMemo(() => {
     if (!selected || !isCandidate) return 0;
     if (selectedStation) {
       const withoutSelected = placed.filter((station) => station.id !== selectedStation.id);
-      return populationScore - getPopulationReached(planningCells, withoutSelected);
+      return gameScore - getPriorityReduction(planningCells, withoutSelected, weights, enabled);
     }
     const proposedStation = {
       id: selected.id,
@@ -119,8 +118,8 @@ export default function App() {
       radius: effectiveRadius,
       cost: metrics.cost,
     };
-    return getPopulationReached(planningCells, [...placed, proposedStation]) - populationScore;
-  }, [effectiveRadius, isCandidate, metrics.cost, placed, planningCells, populationScore, selected, selectedStation]);
+    return getPriorityReduction(planningCells, [...placed, proposedStation], weights, enabled) - gameScore;
+  }, [effectiveRadius, enabled, gameScore, isCandidate, metrics.cost, placed, planningCells, selected, selectedStation, weights]);
   const maxAffordableRadius = selected
     ? STATION_RADII.filter((option) => {
         const optionCost = getCellMetrics(selected, option, planningCells).cost;
@@ -161,21 +160,28 @@ export default function App() {
     setRadius(solution[0]?.radius ?? 150);
   };
 
-  const applyOptimalSolution = async () => {
-    const solution = await generateOptimalSolution(visibleCandidates, planningCells, STARTING_BUDGET);
+  const applyImprovedSolution = async () => {
+    const solution = await generateGreedyLocalSolution(
+      visibleCandidates,
+      planningCells,
+      STARTING_BUDGET,
+      weights,
+      enabled,
+    );
     setPlaced(solution);
     setSelectedId(solution[0]?.id ?? visibleCandidates[0]?.id ?? null);
     setRadius(solution[0]?.radius ?? 150);
     return solution;
   };
 
-  const applyGlobalOptimalSolution = async () => {
-    const buildableCells = selectGlobalCandidatePool(planningCells, weights, enabled);
-    const solution = await generateOptimalSolution(
+  const applyGlobalImprovedSolution = async () => {
+    const buildableCells = planningCells.filter((cell) => cell.buildable);
+    const solution = await generateGreedyLocalSolution(
       buildableCells,
       planningCells,
       STARTING_BUDGET,
-      { timeLimit: 60 },
+      weights,
+      enabled,
     );
     const solutionIds = solution.map((station) => station.id);
     const rankedSolution = rankChallengeSites(cells, solutionIds, weights, enabled);
@@ -235,13 +241,13 @@ export default function App() {
         onTimeChange={setTime}
         budget={budget}
         placedCount={placed.length}
-        populationScore={populationScore}
+        gameScore={gameScore}
         candidateCount={candidates.length}
         onClear={clearPlan}
         onNewChallenge={newChallenge}
-        onGlobalSolution={applyGlobalOptimalSolution}
+        onGlobalSolution={applyGlobalImprovedSolution}
         onAiSolution={applyRandomSolution}
-        onOptimalSolution={applyOptimalSolution}
+        onImprovedSolution={applyImprovedSolution}
       />
       <div className="workspace">
         <LayerPanel
@@ -296,7 +302,7 @@ export default function App() {
           candidateRank={candidateRank}
           isCandidate={isCandidate}
           isPlaced={isPlaced}
-          populationImpact={populationImpact}
+          scoreImpact={scoreImpact}
           maxAffordableRadius={maxAffordableRadius}
           onRadius={changeRadius}
           onPlace={placeStation}
@@ -308,7 +314,7 @@ export default function App() {
         score={selectedScore}
         budget={budget}
         placedCount={placed.length}
-        populationScore={populationScore}
+        gameScore={gameScore}
         candidateRank={candidateRank}
         candidateCount={visibleCandidates.length}
         budgetLocked={budgetLocked}

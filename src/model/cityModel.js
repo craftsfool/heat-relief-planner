@@ -6,6 +6,7 @@ export const CELL_SIZE_METRES = queenstownGrid.metadata.cellSizeMetres;
 export const MAP_METADATA = queenstownGrid.metadata;
 export const MAP_SUBZONES = queenstownGrid.subzones;
 export const STATION_RADII = [100, 150, 200, 250, 300];
+export const SHELTER_SCORE_REDUCTION = 30;
 
 export const LAYER_DEFINITIONS = [
   {
@@ -106,7 +107,7 @@ export function buildCity(time = "afternoon", scenario = "baseline") {
 }
 
 export function getStationCoverage(cell, placedStations = []) {
-  if (!placedStations.length) return 0;
+  if (!cell || cell.outside || cell.water || !placedStations.length) return 0;
 
   return Math.max(
     ...placedStations.map((station) => {
@@ -128,9 +129,8 @@ export function scoreCell(cell, weights, enabledLayers, placedStations = []) {
 
   if (!positiveWeight) {
     const coolingOnlyScore = enabledLayers.cooling ? -cell.cooling * 100 : 0;
-    return Math.round(
-      clamp(coolingOnlyScore - 72 * stationCoverage, -100, 100),
-    );
+    if (coolingOnlyScore <= 0) return Math.round(clamp(coolingOnlyScore, -100, 100));
+    return Math.round(Math.max(0, coolingOnlyScore - SHELTER_SCORE_REDUCTION * stationCoverage));
   }
 
   const positive = LAYER_DEFINITIONS.filter(
@@ -147,7 +147,22 @@ export function scoreCell(cell, weights, enabledLayers, placedStations = []) {
     100,
   );
 
-  return Math.round(clamp(baseScore - 72 * stationCoverage, -100, 100));
+  if (baseScore <= 0) return Math.round(baseScore);
+  return Math.round(Math.max(0, baseScore - SHELTER_SCORE_REDUCTION * stationCoverage));
+}
+
+export function getPriorityReduction(cells, placedStations, weights, enabledLayers) {
+  if (!placedStations.length) return 0;
+  const reduction = cells.reduce((sum, cell) => {
+    if (cell.outside || cell.water) return sum;
+    const baseScore = Math.max(0, scoreCell(cell, weights, enabledLayers));
+    if (!baseScore) return sum;
+    return sum + Math.min(
+      baseScore,
+      SHELTER_SCORE_REDUCTION * getStationCoverage(cell, placedStations),
+    );
+  }, 0);
+  return Math.round(reduction);
 }
 
 export function selectChallengeSites(cells, count = 12, random = Math.random) {
@@ -199,22 +214,6 @@ export function estimateCellPopulation(cell) {
   if (!cell || cell.outside || cell.water) return 0;
   const densityIndex = 0.68 * cell.vulnerable + 0.32 * cell.flow;
   return (35 + densityIndex * 720) * POPULATION_AREA_SCALE;
-}
-
-export function selectGlobalCandidatePool(cells, weights, enabledLayers) {
-  const blockSize = Math.max(1, Math.round(800 / CELL_SIZE_METRES));
-  const bestByBlock = new Map();
-
-  for (const cell of cells) {
-    if (!cell.buildable) continue;
-    const key = `${Math.floor(cell.x / blockSize)}-${Math.floor(cell.y / blockSize)}`;
-    const current = bestByBlock.get(key);
-    if (!current || scoreCell(cell, weights, enabledLayers) > scoreCell(current, weights, enabledLayers)) {
-      bestByBlock.set(key, cell);
-    }
-  }
-
-  return [...bestByBlock.values()];
 }
 
 export function getPopulationReached(cells, placedStations = []) {

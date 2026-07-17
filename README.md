@@ -6,10 +6,12 @@ The base grid uses the URA Master Plan 2019 planning-area boundary and OpenStree
 
 ## Features
 
-- 46 x 44 GIS-derived grid with approximately 160 m cells
+- 370 x 353 GIS-derived grid with 20 m cells and subzone views
 - Composite and single-factor map views
 - Zoom, pan, and responsive mobile layout
-- Budget-based station placement with dynamic coverage reduction
+- Budget-based station placement scored by priority reduction on accessible land
+- Greedy construction with local-search improvements for optimized strategies
+- Marginal shelter effects that do not stack below a cell score of zero
 - Candidate ranking and site-level score breakdowns
 
 ## Run locally
@@ -29,4 +31,3 @@ npm run build
 
 - Planning boundary: Singapore Urban Redevelopment Authority, Master Plan 2019 Planning Area Boundary (No Sea)
 - Map features: OpenStreetMap contributors, available under the Open Database License
-

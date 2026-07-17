@@ -5,7 +5,7 @@ export function StatusBar({
   score,
   budget,
   placedCount,
-  populationScore,
+  gameScore,
   candidateRank,
   candidateCount,
   budgetLocked,
@@ -18,7 +18,7 @@ export function StatusBar({
     <footer className="statusbar">
       <div><Grid3X3 size={18} /><span>Grid</span><strong>{gridColumns} x {gridRows} · {gridCellCount.toLocaleString()} mapped · {cellSizeMetres} m</strong></div>
       <div><Crosshair size={18} /><span>Candidate</span><strong>{selected ? `#${candidateRank} of ${candidateCount} · priority ${score}` : "None"}</strong></div>
-      <div><Trophy size={18} /><span>Game score</span><strong>{populationScore.toLocaleString()} people reached</strong></div>
+      <div><Trophy size={18} /><span>Game score</span><strong>{gameScore.toLocaleString()} priority points reduced</strong></div>
       <div><CircleDollarSign size={18} /><span>Remaining</span><strong>${budget.toLocaleString()} · {budgetLocked ? "budget locked" : `${placedCount} placed`}</strong></div>
     </footer>
   );

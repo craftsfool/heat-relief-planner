@@ -55,9 +55,9 @@ export function LayerPanel({ layers, candidateCount, weights, enabled, activeLay
           <dl>
             <div><dt>Demand</dt><dd>Heat, vulnerability and footfall raise priority.</dd></div>
             <div><dt>Cooling</dt><dd>Nearby cooling facilities reduce priority.</dd></div>
-            <div><dt>Coverage</dt><dd>Placed stations reduce scores in intersecting cells.</dd></div>
+            <div><dt>Coverage</dt><dd>Only the strongest overlapping shelter applies; water is excluded.</dd></div>
           </dl>
-          <p>Priority = normalized demand - cooling penalty - station coverage</p>
+          <p>Priority = max(0, demand - cooling - up to 30 shelter points)</p>
         </section>
       )}
 

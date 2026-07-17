@@ -1,4 +1,4 @@
-import { Check, CircleDollarSign, Info, MapPin, Minus, Plus, Trash2, Users } from "lucide-react";
+import { Check, CircleDollarSign, Info, MapPin, Minus, Plus, Trash2, TrendingDown } from "lucide-react";
 
 export function Inspector({
   cell,
@@ -14,7 +14,7 @@ export function Inspector({
   candidateRank,
   isCandidate,
   isPlaced,
-  populationImpact,
+  scoreImpact,
   maxAffordableRadius,
   onRadius,
   onPlace,
@@ -148,8 +148,8 @@ export function Inspector({
             <dd>${metrics.cost.toLocaleString()}</dd>
           </div>
           <div>
-            <dt><Users size={15} /> Score impact</dt>
-            <dd>+{populationImpact.toLocaleString()} people</dd>
+            <dt><TrendingDown size={15} /> Score impact</dt>
+            <dd>+{scoreImpact.toLocaleString()} pts</dd>
           </div>
         </dl>
         <button

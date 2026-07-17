@@ -257,7 +257,7 @@ export function MapCanvas({
 
     for (const cell of viewCells) {
       let color = getBaseColor(cell);
-      const stationCoverage = getStationCoverage(cell, placed);
+      const stationCoverage = cell.water || cell.outside ? 0 : getStationCoverage(cell, placed);
 
       for (const layer of visibleLayers) {
         if (!enabled[layer.id]) continue;

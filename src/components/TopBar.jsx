@@ -10,13 +10,13 @@ export function TopBar({
   onTimeChange,
   budget,
   placedCount,
-  populationScore,
+  gameScore,
   candidateCount,
   onClear,
   onNewChallenge,
   onGlobalSolution,
   onAiSolution,
-  onOptimalSolution,
+  onImprovedSolution,
 }) {
   return (
     <header className="topbar">
@@ -62,8 +62,8 @@ export function TopBar({
           <strong>${budget.toLocaleString()}</strong>
         </div>
         <div>
-          <span>People reached</span>
-          <strong>{populationScore.toLocaleString()} · {placedCount} stations</strong>
+          <span>Priority reduced</span>
+          <strong>{gameScore.toLocaleString()} pts · {placedCount} stations</strong>
         </div>
         <button className="icon-button topbar-icon-button" type="button" title="Clear current plan" aria-label="Clear current plan" onClick={onClear}>
           <RotateCcw size={16} />
@@ -73,26 +73,26 @@ export function TopBar({
           idleIcon={Dices}
           holdIcon={Target}
           idleLabel="AI random"
-          holdLabel="Hold for optimal"
-          workingLabel="Solving optimal"
-          completeLabel="Optimal ready"
-          errorLabel="Solver failed"
-          title="Click for a random solution. Press and hold, or Shift-click, for the optimal solution."
-          ariaLabel="AI random. Press and hold, or Shift-click, for the optimal solution."
+          holdLabel="Hold to improve"
+          workingLabel="Improving plan"
+          completeLabel="Plan improved"
+          errorLabel="Search failed"
+          title="Click for a random solution. Press and hold, or Shift-click, for greedy and local improvement."
+          ariaLabel="AI random. Press and hold, or Shift-click, to improve the candidate-site plan."
           onClick={onAiSolution}
-          onHold={onOptimalSolution}
+          onHold={onImprovedSolution}
         />
         <HoldActionButton
           className="new-game-button"
           idleIcon={Shuffle}
           holdIcon={Earth}
           idleLabel="New game"
-          holdLabel="Hold for global"
-          workingLabel="Global search"
-          completeLabel="Global ready"
+          holdLabel="Hold to optimize"
+          workingLabel="Optimizing map"
+          completeLabel="Strategy ready"
           errorLabel="Search failed"
-          title={`Click for ${candidateCount} new fixed sites. Press and hold, or Shift-click, for the global optimal solution.`}
-          ariaLabel="New game. Press and hold, or Shift-click, for the global optimal solution."
+          title={`Click for ${candidateCount} new fixed sites. Press and hold, or Shift-click, for spatially screened greedy and local search across the current map.`}
+          ariaLabel="New game. Press and hold, or Shift-click, to optimize across the current map."
           onClick={onNewChallenge}
           onHold={onGlobalSolution}
         />
