@@ -75,6 +75,7 @@ export function MapCanvas({
   const mapOverlayRef = useRef(null);
   const canvasRef = useRef(null);
   const [exportStatus, setExportStatus] = useState("idle");
+  const [hoveredSubzoneCode, setHoveredSubzoneCode] = useState(null);
   const activeSubzone = MAP_SUBZONES.find((subzone) => subzone.code === activeSubzoneCode) ?? null;
   const initialMapScale = activeSubzone ? 1.35 : 0.82;
   const mapTransformRef = useRef({
@@ -121,6 +122,24 @@ export function MapCanvas({
   const hoveredScore = hoveredInView
     ? scoreCell(hoveredInView, weights, enabled, placed)
     : 0;
+  const hoveredSubzoneBoundaryPath = useMemo(() => {
+    if (activeSubzone || !hoveredSubzoneCode) return "";
+
+    const segments = [];
+    const isSameSubzone = (x, y) =>
+      viewCellByCoordinate.get(`${x}-${y}`)?.subzoneCode === hoveredSubzoneCode;
+
+    for (const cell of viewCells) {
+      if (cell.subzoneCode !== hoveredSubzoneCode) continue;
+      const x = cell.x - viewBounds.minX;
+      const y = cell.y - viewBounds.minY;
+      if (!isSameSubzone(cell.x, cell.y - 1)) segments.push(`M${x} ${y}H${x + 1}`);
+      if (!isSameSubzone(cell.x + 1, cell.y)) segments.push(`M${x + 1} ${y}V${y + 1}`);
+      if (!isSameSubzone(cell.x, cell.y + 1)) segments.push(`M${x + 1} ${y + 1}H${x}`);
+      if (!isSameSubzone(cell.x - 1, cell.y)) segments.push(`M${x} ${y + 1}V${y}`);
+    }
+    return segments.join(" ");
+  }, [activeSubzone, hoveredSubzoneCode, viewBounds.minX, viewBounds.minY, viewCellByCoordinate, viewCells]);
 
   const syncMapOverlay = (
     transform = mapTransformRef.current,
@@ -161,6 +180,13 @@ export function MapCanvas({
       "--screen-beacon-glow",
       `${Math.min(8, Math.max(3, screenCellSize * 0.08))}px`,
     );
+
+    overlay.querySelectorAll("[data-map-boundary]").forEach((element) => {
+      element.style.left = `${snap(transform.positionX)}px`;
+      element.style.top = `${snap(transform.positionY)}px`;
+      element.style.width = `${snap(scaledMapWidth)}px`;
+      element.style.height = `${snap(scaledMapHeight)}px`;
+    });
 
     overlay.querySelectorAll("[data-map-x][data-map-y]").forEach((element) => {
       const rect = cellRect(Number(element.dataset.mapX), Number(element.dataset.mapY));
@@ -208,7 +234,7 @@ export function MapCanvas({
 
   useLayoutEffect(() => {
     syncMapOverlay();
-  }, [mapSurfaceSize, activeSubzoneCode, hoveredInView, visibleCandidates]);
+  }, [mapSurfaceSize, activeSubzoneCode, hoveredInView, hoveredSubzoneCode, visibleCandidates]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -404,6 +430,18 @@ export function MapCanvas({
                   ref={mapOverlayRef}
                   className="map-interaction-overlay"
                 >
+                  {hoveredSubzoneBoundaryPath && (
+                    <svg
+                      className="subzone-boundary-highlight"
+                      data-map-boundary="true"
+                      viewBox={`0 0 ${viewColumns} ${viewRows}`}
+                      preserveAspectRatio="none"
+                      aria-hidden="true"
+                    >
+                      <path d={hoveredSubzoneBoundaryPath} vectorEffect="non-scaling-stroke" />
+                    </svg>
+                  )}
+
                   {hoveredInView && (
                     <span
                       className="map-cell-highlight"
@@ -422,6 +460,10 @@ export function MapCanvas({
                       data-map-x={subzone.x}
                       data-map-y={subzone.y}
                       title={`Open ${subzone.name} subzone`}
+                      onMouseEnter={() => setHoveredSubzoneCode(subzone.code)}
+                      onMouseLeave={() => setHoveredSubzoneCode(null)}
+                      onFocus={() => setHoveredSubzoneCode(subzone.code)}
+                      onBlur={() => setHoveredSubzoneCode(null)}
                       onClick={(event) => {
                         event.stopPropagation();
                         onSubzone(subzone.code);

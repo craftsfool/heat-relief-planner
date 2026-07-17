@@ -412,22 +412,48 @@ button { color: inherit; }
   z-index: 18;
   transform: translate(-50%, -50%);
   transform-origin: center;
-  max-width: 100px;
-  padding: 3px 4px;
-  color: #17293f;
-  background: rgba(255, 255, 255, .82);
-  border: 1px solid rgba(86, 105, 127, .46);
-  border-radius: 3px;
-  font-size: 7px;
-  font-weight: 800;
-  line-height: 1.05;
+  max-width: 116px;
+  padding: 5px;
+  color: #26394c;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  font-size: 8px;
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: 0;
   text-align: center;
   cursor: pointer;
-  box-shadow: 0 1px 2px rgba(15, 31, 50, .16);
+  box-shadow: none;
+  paint-order: stroke fill;
+  -webkit-text-stroke: 2px rgba(255, 255, 255, .96);
+  text-shadow: 0 1px 1px rgba(20, 35, 51, .3);
   pointer-events: auto;
+  transition: color 120ms ease, text-shadow 120ms ease, -webkit-text-stroke-color 120ms ease;
 }
 .subzone-map-label:hover,
-.subzone-map-label:focus-visible { z-index: 22; color: #fff; background: var(--blue); border-color: #fff; }
+.subzone-map-label:focus-visible {
+  z-index: 22;
+  color: #075dcc;
+  background: transparent;
+  outline: 0;
+  -webkit-text-stroke-color: #fff;
+  text-shadow: 0 0 3px #fff, 0 0 7px rgba(18, 93, 204, .95);
+}
+.subzone-boundary-highlight {
+  position: absolute;
+  z-index: 14;
+  overflow: visible;
+  pointer-events: none;
+}
+.subzone-boundary-highlight path {
+  fill: none;
+  stroke: #1677e8;
+  stroke-width: 2.25;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  filter: drop-shadow(0 0 1px #fff) drop-shadow(0 0 4px rgba(22, 119, 232, .95));
+}
 .map-site-marker {
   width: var(--screen-beacon-size);
   height: var(--screen-beacon-size);
@@ -813,7 +839,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   .shelter-roster { top: 50px; right: 8px; }
   .shelter-roster.is-open { width: min(270px, calc(100% - 16px)); }
   .hover-readout { right: 8px; }
-  .subzone-map-label { max-width: 74px; padding: 2px 3px; font-size: 6px; }
+  .subzone-map-label { max-width: 92px; padding: 4px; font-size: 7px; }
   .inspector { display: block; border-top: 1px solid var(--border); }
   .statusbar { grid-template-columns: 1fr 1fr; padding: 10px 12px; }
 }
