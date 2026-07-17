@@ -5,7 +5,11 @@ import { MapCanvas } from "./components/MapCanvas";
 import { StatusBar } from "./components/StatusBar";
 import { TopBar } from "./components/TopBar";
 import {
+  CELL_SIZE_METRES,
+  GRID_COLS,
+  GRID_ROWS,
   LAYER_DEFINITIONS,
+  MAP_SUBZONES,
   STATION_RADII,
   buildCity,
   generateRandomSolution,
@@ -48,6 +52,16 @@ export default function App() {
   );
 
   const cells = useMemo(() => buildCity(time, scenario), [time, scenario]);
+  const activeSubzone = useMemo(
+    () => MAP_SUBZONES.find((subzone) => subzone.code === activeSubzoneCode) ?? null,
+    [activeSubzoneCode],
+  );
+  const planningCells = useMemo(
+    () => activeSubzone
+      ? cells.filter((cell) => cell.subzoneCode === activeSubzone.code)
+      : cells,
+    [activeSubzone, cells],
+  );
   const candidates = useMemo(
     () => rankChallengeSites(cells, challengeIds, weights, enabled),
     [cells, challengeIds, weights, enabled],
@@ -60,8 +74,11 @@ export default function App() {
   );
   const cellById = useMemo(() => new Map(cells.map((cell) => [cell.id, cell])), [cells]);
   const challengeIdSet = useMemo(() => new Set(challengeIds), [challengeIds]);
-  const selected = cellById.get(selectedId) ?? visibleCandidates[0] ?? null;
-  const candidateRank = candidates.findIndex((candidate) => candidate.id === selected?.id) + 1;
+  const selectedCell = cellById.get(selectedId);
+  const selected = selectedCell && (!activeSubzone || selectedCell.subzoneCode === activeSubzone.code)
+    ? selectedCell
+    : visibleCandidates[0] ?? null;
+  const candidateRank = visibleCandidates.findIndex((candidate) => candidate.id === selected?.id) + 1;
   const isCandidate = candidateRank > 0;
   const selectedBaseScore = selected ? scoreCell(selected, weights, enabled) : 0;
   const selectedScore = selected ? scoreCell(selected, weights, enabled, placed) : 0;
@@ -70,8 +87,8 @@ export default function App() {
   const selectedStation = placed.find((station) => station.id === selected?.id);
   const effectiveRadius = selectedStation?.radius ?? radius;
   const calculatedMetrics = useMemo(
-    () => getCellMetrics(selected, effectiveRadius, cells),
-    [selected, effectiveRadius, cells],
+    () => getCellMetrics(selected, effectiveRadius, planningCells),
+    [selected, effectiveRadius, planningCells],
   );
   const metrics = selectedStation
     ? { ...calculatedMetrics, cost: selectedStation.cost }
@@ -80,20 +97,20 @@ export default function App() {
   const budget = STARTING_BUDGET - spent;
   const isPlaced = placed.some((station) => station.id === selected?.id);
   const populationScore = useMemo(
-    () => getPopulationReached(cells, placed),
-    [cells, placed],
+    () => getPopulationReached(planningCells, placed),
+    [planningCells, placed],
   );
   const placedIds = useMemo(() => new Set(placed.map((station) => station.id)), [placed]);
-  const cheapestRemainingCost = candidates.reduce((minimum, candidate) => {
+  const cheapestRemainingCost = visibleCandidates.reduce((minimum, candidate) => {
     if (placedIds.has(candidate.id)) return minimum;
-    return Math.min(minimum, getCellMetrics(candidate, STATION_RADII[0], cells).cost);
+    return Math.min(minimum, getCellMetrics(candidate, STATION_RADII[0], planningCells).cost);
   }, Number.POSITIVE_INFINITY);
-  const budgetLocked = budget < cheapestRemainingCost;
+  const budgetLocked = visibleCandidates.length > 0 && budget < cheapestRemainingCost;
   const populationImpact = useMemo(() => {
     if (!selected || !isCandidate) return 0;
     if (selectedStation) {
       const withoutSelected = placed.filter((station) => station.id !== selectedStation.id);
-      return populationScore - getPopulationReached(cells, withoutSelected);
+      return populationScore - getPopulationReached(planningCells, withoutSelected);
     }
     const proposedStation = {
       id: selected.id,
@@ -102,25 +119,25 @@ export default function App() {
       radius: effectiveRadius,
       cost: metrics.cost,
     };
-    return getPopulationReached(cells, [...placed, proposedStation]) - populationScore;
-  }, [cells, effectiveRadius, isCandidate, metrics.cost, placed, populationScore, selected, selectedStation]);
+    return getPopulationReached(planningCells, [...placed, proposedStation]) - populationScore;
+  }, [effectiveRadius, isCandidate, metrics.cost, placed, planningCells, populationScore, selected, selectedStation]);
   const maxAffordableRadius = selected
     ? STATION_RADII.filter((option) => {
-        const optionCost = getCellMetrics(selected, option, cells).cost;
+        const optionCost = getCellMetrics(selected, option, planningCells).cost;
         const available = selectedStation ? budget + selectedStation.cost : budget;
         return optionCost <= available;
       }).at(-1) ?? STATION_RADII[0]
     : STATION_RADII[0];
 
   const clearPlan = () => {
-    setSelectedId(candidates[0]?.id ?? null);
+    setSelectedId(visibleCandidates[0]?.id ?? null);
     setHovered(null);
     setRadius(150);
     setPlaced([]);
   };
 
   const startChallenge = (count) => {
-    const nextCandidates = selectChallengeSites(cells, count);
+    const nextCandidates = selectChallengeSites(planningCells, count);
     const nextIds = nextCandidates.map((cell) => cell.id);
     const rankedNext = rankChallengeSites(cells, nextIds, weights, enabled);
     setChallengeIds(nextIds);
@@ -138,25 +155,25 @@ export default function App() {
   };
 
   const applyRandomSolution = () => {
-    const solution = generateRandomSolution(candidates, cells, STARTING_BUDGET);
+    const solution = generateRandomSolution(visibleCandidates, planningCells, STARTING_BUDGET);
     setPlaced(solution);
-    setSelectedId(solution[0]?.id ?? candidates[0]?.id ?? null);
+    setSelectedId(solution[0]?.id ?? visibleCandidates[0]?.id ?? null);
     setRadius(solution[0]?.radius ?? 150);
   };
 
   const applyOptimalSolution = async () => {
-    const solution = await generateOptimalSolution(candidates, cells, STARTING_BUDGET);
+    const solution = await generateOptimalSolution(visibleCandidates, planningCells, STARTING_BUDGET);
     setPlaced(solution);
-    setSelectedId(solution[0]?.id ?? candidates[0]?.id ?? null);
+    setSelectedId(solution[0]?.id ?? visibleCandidates[0]?.id ?? null);
     setRadius(solution[0]?.radius ?? 150);
     return solution;
   };
 
   const applyGlobalOptimalSolution = async () => {
-    const buildableCells = selectGlobalCandidatePool(cells, weights, enabled);
+    const buildableCells = selectGlobalCandidatePool(planningCells, weights, enabled);
     const solution = await generateOptimalSolution(
       buildableCells,
-      cells,
+      planningCells,
       STARTING_BUDGET,
       { timeLimit: 60 },
     );
@@ -198,7 +215,7 @@ export default function App() {
       setRadius(value);
       return;
     }
-    const nextMetrics = getCellMetrics(selected, value, cells);
+    const nextMetrics = getCellMetrics(selected, value, planningCells);
     if (spent - selectedStation.cost + nextMetrics.cost > STARTING_BUDGET) return;
     setPlaced((current) =>
       current.map((station) =>
@@ -293,8 +310,12 @@ export default function App() {
         placedCount={placed.length}
         populationScore={populationScore}
         candidateRank={candidateRank}
-        candidateCount={candidates.length}
+        candidateCount={visibleCandidates.length}
         budgetLocked={budgetLocked}
+        gridColumns={activeSubzone ? activeSubzone.bounds.maxX - activeSubzone.bounds.minX + 1 : GRID_COLS}
+        gridRows={activeSubzone ? activeSubzone.bounds.maxY - activeSubzone.bounds.minY + 1 : GRID_ROWS}
+        gridCellCount={planningCells.length}
+        cellSizeMetres={CELL_SIZE_METRES}
       />
     </div>
   );
