@@ -7,7 +7,7 @@ import {
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { TransformComponent, TransformWrapper } from "react-zoom-pan-pinch";
 import { toPng } from "html-to-image";
 import { ShelterRoster } from "./ShelterRoster";
@@ -72,17 +72,20 @@ export function MapCanvas({
 }) {
   const mapShellRef = useRef(null);
   const mapSurfaceRef = useRef(null);
+  const mapOverlayRef = useRef(null);
   const canvasRef = useRef(null);
   const [exportStatus, setExportStatus] = useState("idle");
   const activeSubzone = MAP_SUBZONES.find((subzone) => subzone.code === activeSubzoneCode) ?? null;
   const initialMapScale = activeSubzone ? 1.35 : 0.82;
-  const [mapTransform, setMapTransform] = useState({
+  const mapTransformRef = useRef({
     scale: initialMapScale,
     positionX: 0,
     positionY: 0,
   });
+  const mapSurfaceSizeRef = useRef({ width: 0, height: 0 });
   const [mapSurfaceSize, setMapSurfaceSize] = useState({ width: 0, height: 0 });
-  const mapScale = mapTransform.scale;
+  const cellDetailRef = useRef(initialMapScale >= 3.5);
+  const [isCellDetail, setIsCellDetail] = useState(cellDetailRef.current);
   const viewBounds = activeSubzone?.bounds ?? {
     minX: 0,
     minY: 0,
@@ -118,44 +121,66 @@ export function MapCanvas({
   const hoveredScore = hoveredInView
     ? scoreCell(hoveredInView, weights, enabled, placed)
     : 0;
-  const scaledMapWidth = mapSurfaceSize.width * mapScale;
-  const scaledMapHeight = mapSurfaceSize.height * mapScale;
-  const screenCellSize = scaledMapWidth / viewColumns;
-  const beaconScreenSize = Math.min(72, Math.max(16, screenCellSize * 0.65));
-  const beaconFontSize = Math.min(42, Math.max(9, screenCellSize * 0.38));
-  const beaconRadius = Math.min(14, Math.max(4, screenCellSize * 0.12));
-  const beaconGlow = Math.min(8, Math.max(3, screenCellSize * 0.08));
-  const devicePixelRatio = window.devicePixelRatio || 1;
-  const snapToDevicePixel = (value) => Math.round(value * devicePixelRatio) / devicePixelRatio;
 
-  const overlayCellRect = (x, y) => {
-    const localX = x - viewBounds.minX;
-    const localY = y - viewBounds.minY;
-    const left = snapToDevicePixel(
-      mapTransform.positionX + (localX / viewColumns) * scaledMapWidth,
-    );
-    const right = snapToDevicePixel(
-      mapTransform.positionX + ((localX + 1) / viewColumns) * scaledMapWidth,
-    );
-    const top = snapToDevicePixel(
-      mapTransform.positionY + (localY / viewRows) * scaledMapHeight,
-    );
-    const bottom = snapToDevicePixel(
-      mapTransform.positionY + ((localY + 1) / viewRows) * scaledMapHeight,
-    );
-    return { left, top, width: right - left, height: bottom - top };
-  };
+  const syncMapOverlay = (
+    transform = mapTransformRef.current,
+    surfaceSize = mapSurfaceSizeRef.current,
+  ) => {
+    const overlay = mapOverlayRef.current;
+    if (!overlay || !surfaceSize.width || !surfaceSize.height) return;
 
-  const overlayPoint = (x, y) => {
-    const cellRect = overlayCellRect(x, y);
-    return {
-      left: cellRect.left + cellRect.width / 2,
-      top: cellRect.top + cellRect.height / 2,
+    const scaledMapWidth = surfaceSize.width * transform.scale;
+    const scaledMapHeight = surfaceSize.height * transform.scale;
+    const screenCellSize = scaledMapWidth / viewColumns;
+    const devicePixelRatio = window.devicePixelRatio || 1;
+    const snap = (value) => Math.round(value * devicePixelRatio) / devicePixelRatio;
+    const cellRect = (x, y) => {
+      const localX = x - viewBounds.minX;
+      const localY = y - viewBounds.minY;
+      const left = snap(transform.positionX + (localX / viewColumns) * scaledMapWidth);
+      const right = snap(transform.positionX + ((localX + 1) / viewColumns) * scaledMapWidth);
+      const top = snap(transform.positionY + (localY / viewRows) * scaledMapHeight);
+      const bottom = snap(transform.positionY + ((localY + 1) / viewRows) * scaledMapHeight);
+      return { left, top, width: right - left, height: bottom - top };
     };
+
+    overlay.style.setProperty("--screen-cell-size", `${screenCellSize}px`);
+    overlay.style.setProperty(
+      "--screen-beacon-size",
+      `${Math.min(72, Math.max(16, screenCellSize * 0.65))}px`,
+    );
+    overlay.style.setProperty(
+      "--screen-beacon-font",
+      `${Math.min(42, Math.max(9, screenCellSize * 0.38))}px`,
+    );
+    overlay.style.setProperty(
+      "--screen-beacon-radius",
+      `${Math.min(14, Math.max(4, screenCellSize * 0.12))}px`,
+    );
+    overlay.style.setProperty(
+      "--screen-beacon-glow",
+      `${Math.min(8, Math.max(3, screenCellSize * 0.08))}px`,
+    );
+
+    overlay.querySelectorAll("[data-map-x][data-map-y]").forEach((element) => {
+      const rect = cellRect(Number(element.dataset.mapX), Number(element.dataset.mapY));
+      if (element.dataset.mapCell === "true") {
+        element.style.left = `${rect.left}px`;
+        element.style.top = `${rect.top}px`;
+        element.style.width = `${rect.width}px`;
+        element.style.height = `${rect.height}px`;
+      } else {
+        element.style.left = `${rect.left + rect.width / 2}px`;
+        element.style.top = `${rect.top + rect.height / 2}px`;
+      }
+    });
   };
 
   useEffect(() => {
-    setMapTransform({ scale: initialMapScale, positionX: 0, positionY: 0 });
+    const initialTransform = { scale: initialMapScale, positionX: 0, positionY: 0 };
+    mapTransformRef.current = initialTransform;
+    cellDetailRef.current = initialMapScale >= 3.5;
+    setIsCellDetail(cellDetailRef.current);
   }, [activeSubzoneCode, initialMapScale]);
 
   useEffect(() => {
@@ -166,17 +191,24 @@ export function MapCanvas({
         ? { width: contentRect.width, height: contentRect.height }
         : (() => {
             const bounds = surface.getBoundingClientRect();
-            return { width: bounds.width / mapScale, height: bounds.height / mapScale };
+            const scale = mapTransformRef.current.scale || 1;
+            return { width: bounds.width / scale, height: bounds.height / scale };
           })();
+      mapSurfaceSizeRef.current = next;
       setMapSurfaceSize((current) => current.width === next.width && current.height === next.height
         ? current
         : next);
+      syncMapOverlay(mapTransformRef.current, next);
     };
     updateSize();
     const observer = new ResizeObserver(([entry]) => updateSize(entry.contentRect));
     observer.observe(surface);
     return () => observer.disconnect();
   }, [activeSubzoneCode, viewColumns, viewRows]);
+
+  useLayoutEffect(() => {
+    syncMapOverlay();
+  }, [mapSurfaceSize, activeSubzoneCode, hoveredInView, visibleCandidates]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -316,11 +348,20 @@ export function MapCanvas({
           zoomAnimation={{ disabled: true }}
           autoAlignment={{ disabled: true }}
           velocityAnimation={{ disabled: true }}
-          onTransform={(_, state) => setMapTransform({
-            scale: state.scale,
-            positionX: state.positionX,
-            positionY: state.positionY,
-          })}
+          onTransform={(_, state) => {
+            const nextTransform = {
+              scale: state.scale,
+              positionX: state.positionX,
+              positionY: state.positionY,
+            };
+            mapTransformRef.current = nextTransform;
+            syncMapOverlay(nextTransform);
+            const nextCellDetail = state.scale >= 3.5;
+            if (nextCellDetail !== cellDetailRef.current) {
+              cellDetailRef.current = nextCellDetail;
+              setIsCellDetail(nextCellDetail);
+            }
+          }}
         >
           {({ zoomIn, zoomOut, centerView }) => (
             <>
@@ -343,7 +384,7 @@ export function MapCanvas({
               <TransformComponent wrapperClass="map-transform-wrapper" contentClass="map-transform-content">
                 <div
                   ref={mapSurfaceRef}
-                  className={`canvas-map ${mapScale >= 3.5 ? "is-cell-detail" : ""}`}
+                  className={`canvas-map ${isCellDetail ? "is-cell-detail" : ""}`}
                   style={{
                     aspectRatio: `${viewColumns} / ${viewRows}`,
                   }}
@@ -360,20 +401,16 @@ export function MapCanvas({
 
               {mapSurfaceSize.width > 0 && (
                 <div
+                  ref={mapOverlayRef}
                   className="map-interaction-overlay"
-                  style={{
-                    "--screen-cell-size": `${screenCellSize}px`,
-                    "--screen-beacon-size": `${beaconScreenSize}px`,
-                    "--screen-beacon-font": `${beaconFontSize}px`,
-                    "--screen-beacon-radius": `${beaconRadius}px`,
-                    "--screen-beacon-glow": `${beaconGlow}px`,
-                  }}
                 >
                   {hoveredInView && (
                     <span
                       className="map-cell-highlight"
                       data-testid="map-cell-highlight"
-                      style={overlayCellRect(hoveredInView.x, hoveredInView.y)}
+                      data-map-cell="true"
+                      data-map-x={hoveredInView.x}
+                      data-map-y={hoveredInView.y}
                     />
                   )}
 
@@ -382,7 +419,8 @@ export function MapCanvas({
                       className="subzone-map-label"
                       key={subzone.code}
                       type="button"
-                      style={overlayPoint(subzone.x, subzone.y)}
+                      data-map-x={subzone.x}
+                      data-map-y={subzone.y}
                       title={`Open ${subzone.name} subzone`}
                       onClick={(event) => {
                         event.stopPropagation();
@@ -401,7 +439,8 @@ export function MapCanvas({
                         className={`map-site-marker ${isStation ? "is-station" : ""} ${selected?.id === candidate.id ? "is-selected" : ""}`}
                         key={candidate.id}
                         type="button"
-                        style={overlayPoint(candidate.x, candidate.y)}
+                        data-map-x={candidate.x}
+                        data-map-y={candidate.y}
                         aria-label={`Candidate ${rank}, ${candidate.zone}`}
                         title={`Candidate ${rank} · ${candidate.zone}`}
                         onMouseEnter={() => onHover(candidate)}
