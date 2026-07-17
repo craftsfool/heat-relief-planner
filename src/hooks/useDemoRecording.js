@@ -93,6 +93,52 @@ const drawRecordingFrame = (context, width, height, sourceCanvas, transform, dat
   context.textAlign = "left";
   context.textBaseline = "middle";
   context.fillText(title, 21, 25);
+
+  if (data.currentStep && ["focus", "applied"].includes(data.phase)) {
+    const step = data.currentStep;
+    const panelWidth = Math.min(300, width - 24);
+    const panelHeight = 136;
+    const panelX = width - panelWidth - 12;
+    const panelY = 12;
+    const rightX = panelX + panelWidth - 10;
+    const phaseLabel = data.phase === "applied" ? "SCORES RECALCULATED" : "BEFORE PLACEMENT";
+    const rows = [
+      ["Marginal reduction", `+${step.marginalGain.toLocaleString()} pts`],
+      ["Efficiency", `${step.efficiency.toLocaleString()} pts / $100k`],
+      ["Radius · Cost", `${step.station.radius} m · $${step.station.cost.toLocaleString()}`],
+      ["Options · Budget left", `${step.evaluatedOptions.toLocaleString()} · $${step.remainingBudget.toLocaleString()}`],
+    ];
+
+    context.fillStyle = "rgba(255,255,255,.95)";
+    context.fillRect(panelX, panelY, panelWidth, panelHeight);
+    context.strokeStyle = data.phase === "applied" ? "rgba(15,128,109,.7)" : "rgba(95,116,139,.7)";
+    context.lineWidth = 1;
+    context.strokeRect(panelX + 0.5, panelY + 0.5, panelWidth - 1, panelHeight - 1);
+    context.textAlign = "left";
+    context.fillStyle = "#0f6f60";
+    context.font = "900 8px Arial, sans-serif";
+    context.fillText(`DECISION ${data.stepIndex + 1}/${data.totalSteps} · ${phaseLabel}`, panelX + 10, panelY + 13);
+    context.fillStyle = "#25364a";
+    context.font = "800 12px Arial, sans-serif";
+    context.fillText(`Candidate #${step.rank} · ${step.zone}`, panelX + 10, panelY + 30);
+
+    rows.forEach(([label, value], index) => {
+      const rowTop = panelY + 42 + index * 22;
+      context.strokeStyle = "#edf0f4";
+      context.beginPath();
+      context.moveTo(panelX + 10, rowTop);
+      context.lineTo(rightX, rowTop);
+      context.stroke();
+      context.fillStyle = "#687789";
+      context.font = "400 9px Arial, sans-serif";
+      context.textAlign = "left";
+      context.fillText(label, panelX + 10, rowTop + 12);
+      context.fillStyle = "#25364a";
+      context.font = "800 9px Arial, sans-serif";
+      context.textAlign = "right";
+      context.fillText(value, rightX, rowTop + 12);
+    });
+  }
 };
 
 export function useDemoRecording({ mapShellRef, canvasRef, mapTransformRef, frameDataRef }) {

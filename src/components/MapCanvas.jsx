@@ -150,6 +150,8 @@ export function MapCanvas({
     visibleCandidates,
     candidateIndex,
     currentStep: currentGreedyStep,
+    stepIndex: greedyDemo.stepIndex,
+    totalSteps: greedyDemo.steps.length,
     phase: greedyDemo.phase,
     mapName: activeSubzone?.name ?? "Queenstown",
   };
