@@ -71,11 +71,18 @@ export function MapCanvas({
   onHover,
 }) {
   const mapShellRef = useRef(null);
+  const mapSurfaceRef = useRef(null);
   const canvasRef = useRef(null);
   const [exportStatus, setExportStatus] = useState("idle");
   const activeSubzone = MAP_SUBZONES.find((subzone) => subzone.code === activeSubzoneCode) ?? null;
   const initialMapScale = activeSubzone ? 1.35 : 0.82;
-  const [mapScale, setMapScale] = useState(initialMapScale);
+  const [mapTransform, setMapTransform] = useState({
+    scale: initialMapScale,
+    positionX: 0,
+    positionY: 0,
+  });
+  const [mapSurfaceSize, setMapSurfaceSize] = useState({ width: 0, height: 0 });
+  const mapScale = mapTransform.scale;
   const viewBounds = activeSubzone?.bounds ?? {
     minX: 0,
     minY: 0,
@@ -111,10 +118,39 @@ export function MapCanvas({
   const hoveredScore = hoveredInView
     ? scoreCell(hoveredInView, weights, enabled, placed)
     : 0;
+  const scaledMapWidth = mapSurfaceSize.width * mapScale;
+  const scaledMapHeight = mapSurfaceSize.height * mapScale;
+  const screenCellSize = scaledMapWidth / viewColumns;
+  const beaconScreenSize = Math.min(72, Math.max(16, screenCellSize * 0.65));
+  const beaconFontSize = Math.min(42, Math.max(9, screenCellSize * 0.38));
+  const beaconRadius = Math.min(14, Math.max(4, screenCellSize * 0.12));
+  const beaconGlow = Math.min(8, Math.max(3, screenCellSize * 0.08));
+
+  const overlayPoint = (x, y, centered = true) => ({
+    left: mapTransform.positionX +
+      ((x - viewBounds.minX + (centered ? 0.5 : 0)) / viewColumns) * scaledMapWidth,
+    top: mapTransform.positionY +
+      ((y - viewBounds.minY + (centered ? 0.5 : 0)) / viewRows) * scaledMapHeight,
+  });
 
   useEffect(() => {
-    setMapScale(initialMapScale);
+    setMapTransform({ scale: initialMapScale, positionX: 0, positionY: 0 });
   }, [activeSubzoneCode, initialMapScale]);
+
+  useEffect(() => {
+    const surface = mapSurfaceRef.current;
+    if (!surface) return undefined;
+    const updateSize = () => {
+      const next = { width: surface.offsetWidth, height: surface.offsetHeight };
+      setMapSurfaceSize((current) => current.width === next.width && current.height === next.height
+        ? current
+        : next);
+    };
+    updateSize();
+    const observer = new ResizeObserver(updateSize);
+    observer.observe(surface);
+    return () => observer.disconnect();
+  }, [activeSubzoneCode, viewColumns, viewRows]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -254,7 +290,11 @@ export function MapCanvas({
           zoomAnimation={{ disabled: true }}
           autoAlignment={{ disabled: true }}
           velocityAnimation={{ disabled: true }}
-          onTransform={(_, state) => setMapScale(state.scale)}
+          onTransform={(_, state) => setMapTransform({
+            scale: state.scale,
+            positionX: state.positionX,
+            positionY: state.positionY,
+          })}
         >
           {({ zoomIn, zoomOut, centerView }) => (
             <>
@@ -276,23 +316,10 @@ export function MapCanvas({
 
               <TransformComponent wrapperClass="map-transform-wrapper" contentClass="map-transform-content">
                 <div
+                  ref={mapSurfaceRef}
                   className={`canvas-map ${mapScale >= 3.5 ? "is-cell-detail" : ""}`}
                   style={{
                     aspectRatio: `${viewColumns} / ${viewRows}`,
-                    "--view-columns": viewColumns,
-                    "--view-rows": viewRows,
-                    "--map-cell-size": `${100 / viewColumns}cqw`,
-                    "--beacon-cell-size": `${65 / viewColumns}cqw`,
-                    "--map-cell-font-size": `${38 / viewColumns}cqw`,
-                    "--map-cell-radius": `${12 / viewColumns}cqw`,
-                    "--map-cell-glow": `${8 / viewColumns}cqw`,
-                    "--map-highlight-outline": `${2 / viewColumns}cqw`,
-                    "--map-highlight-inset": `${1 / viewColumns}cqw`,
-                    "--map-label-scale": 1 / mapScale,
-                    "--beacon-min-size": `${16 / mapScale}px`,
-                    "--beacon-min-font-size": `${9 / mapScale}px`,
-                    "--beacon-min-radius": `${4 / mapScale}px`,
-                    "--beacon-min-glow": `${3 / mapScale}px`,
                   }}
                   onMouseMove={(event) => onHover(cellFromPointer(event))}
                   onMouseLeave={() => onHover(null)}
@@ -302,15 +329,25 @@ export function MapCanvas({
                   }}
                 >
                   <canvas ref={canvasRef} aria-label={`${activeSubzone?.name ?? "Queenstown"} 20 metre planning grid`} />
+                </div>
+              </TransformComponent>
 
+              {mapSurfaceSize.width > 0 && (
+                <div
+                  className="map-interaction-overlay"
+                  style={{
+                    "--screen-cell-size": `${screenCellSize}px`,
+                    "--screen-beacon-size": `${beaconScreenSize}px`,
+                    "--screen-beacon-font": `${beaconFontSize}px`,
+                    "--screen-beacon-radius": `${beaconRadius}px`,
+                    "--screen-beacon-glow": `${beaconGlow}px`,
+                  }}
+                >
                   {hoveredInView && (
                     <span
                       className="map-cell-highlight"
                       data-testid="map-cell-highlight"
-                      style={{
-                        left: `${((hoveredInView.x - viewBounds.minX) / viewColumns) * 100}%`,
-                        top: `${((hoveredInView.y - viewBounds.minY) / viewRows) * 100}%`,
-                      }}
+                      style={overlayPoint(hoveredInView.x, hoveredInView.y, false)}
                     />
                   )}
 
@@ -319,10 +356,7 @@ export function MapCanvas({
                       className="subzone-map-label"
                       key={subzone.code}
                       type="button"
-                      style={{
-                        left: `${((subzone.x + 0.5) / GRID_COLS) * 100}%`,
-                        top: `${((subzone.y + 0.5) / GRID_ROWS) * 100}%`,
-                      }}
+                      style={overlayPoint(subzone.x, subzone.y)}
                       title={`Open ${subzone.name} subzone`}
                       onClick={(event) => {
                         event.stopPropagation();
@@ -341,10 +375,7 @@ export function MapCanvas({
                         className={`map-site-marker ${isStation ? "is-station" : ""} ${selected?.id === candidate.id ? "is-selected" : ""}`}
                         key={candidate.id}
                         type="button"
-                        style={{
-                          left: `${((candidate.x - viewBounds.minX + 0.5) / viewColumns) * 100}%`,
-                          top: `${((candidate.y - viewBounds.minY + 0.5) / viewRows) * 100}%`,
-                        }}
+                        style={overlayPoint(candidate.x, candidate.y)}
                         aria-label={`Candidate ${rank}, ${candidate.zone}`}
                         title={`Candidate ${rank} · ${candidate.zone}`}
                         onMouseEnter={() => onHover(candidate)}
@@ -359,7 +390,7 @@ export function MapCanvas({
                     );
                   })}
                 </div>
-              </TransformComponent>
+              )}
             </>
           )}
         </TransformWrapper>
