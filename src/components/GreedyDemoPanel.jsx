@@ -21,6 +21,12 @@ const STATUS_LABELS = {
   error: "Error",
 };
 
+const PHASE_LABELS = {
+  focus: "Inspecting scores before placement",
+  applied: "Shelter placed; nearby scores recalculated",
+  overview: "Returning to the map overview",
+};
+
 export function GreedyDemoPanel({
   demo,
   currentStep,
@@ -37,9 +43,11 @@ export function GreedyDemoPanel({
   });
   if (!demo.open) return null;
 
-  const completedSteps = Math.max(0, demo.stepIndex + 1);
+  const completedSteps = demo.phase === "focus"
+    ? Math.max(0, demo.stepIndex)
+    : Math.max(0, demo.stepIndex + 1);
   const progress = demo.steps.length ? (completedSteps / demo.steps.length) * 100 : 0;
-  const canAdvance = demo.steps.length > 0 && demo.stepIndex < demo.steps.length - 1;
+  const canAdvance = demo.steps.length > 0 && !["solving", "complete", "error"].includes(demo.status);
   const isPlaying = demo.status === "playing";
 
   return (
@@ -76,9 +84,11 @@ export function GreedyDemoPanel({
         ) : currentStep ? (
           <>
             <div className="greedy-demo-decision">
-              <span>Decision {completedSteps} of {demo.steps.length}</span>
+              <span>Decision {demo.stepIndex + 1} of {demo.steps.length}</span>
               <strong>Candidate #{currentStep.rank} · {currentStep.zone}</strong>
-              <small>Highest marginal score reduction per dollar</small>
+              <small className={`greedy-demo-phase is-${demo.phase}`}>
+                {PHASE_LABELS[demo.phase] ?? "Highest marginal score reduction per dollar"}
+              </small>
             </div>
             <dl className="greedy-demo-metrics">
               <div><dt><TrendingDown size={14} /> Marginal reduction</dt><dd>+{currentStep.marginalGain.toLocaleString()} pts</dd></div>
@@ -107,7 +117,7 @@ export function GreedyDemoPanel({
         >
           {isPlaying ? <Pause size={15} /> : <Play size={15} />}
         </button>
-        <button type="button" title="Show next decision" aria-label="Show next greedy decision" disabled={!canAdvance || isPlaying} onClick={onStep}>
+        <button type="button" title="Advance demo phase" aria-label="Advance greedy demo phase" disabled={!canAdvance || isPlaying} onClick={onStep}>
           <SkipForward size={15} />
         </button>
         <button type="button" title="Replay from the first decision" aria-label="Replay greedy animation" disabled={!demo.steps.length} onClick={onRestart}>

@@ -35,6 +35,10 @@ const BASE_COLORS = {
   transit: [91, 72, 143],
 };
 
+const SCORE_LABEL_MIN_CELL_PX = 28;
+const DEMO_TARGET_CELL_PX = 56;
+const MAX_MAP_SCALE = 48;
+
 const hexToRgb = (hex) => {
   const value = Number.parseInt(hex.slice(1), 16);
   return [(value >> 16) & 255, (value >> 8) & 255, value & 255];
@@ -84,9 +88,13 @@ export function MapCanvas({
   const mapSurfaceRef = useRef(null);
   const mapOverlayRef = useRef(null);
   const canvasRef = useRef(null);
+  const transformControlsRef = useRef(null);
+  const scoreViewportKeyRef = useRef("");
+  const previousDemoOpenRef = useRef(false);
   const [exportStatus, setExportStatus] = useState("idle");
   const [isRosterVisible, setIsRosterVisible] = useState(true);
   const [hoveredSubzoneCode, setHoveredSubzoneCode] = useState(null);
+  const [scoreCells, setScoreCells] = useState([]);
   const activeSubzone = MAP_SUBZONES.find((subzone) => subzone.code === activeSubzoneCode) ?? null;
   const initialMapScale = activeSubzone ? 1.35 : 0.82;
   const mapTransformRef = useRef({
@@ -177,6 +185,10 @@ export function MapCanvas({
 
     overlay.style.setProperty("--screen-cell-size", `${screenCellSize}px`);
     overlay.style.setProperty(
+      "--screen-score-font",
+      `${Math.min(34, Math.max(9, screenCellSize * 0.34))}px`,
+    );
+    overlay.style.setProperty(
       "--screen-beacon-size",
       `${Math.min(72, Math.max(16, screenCellSize * 0.65))}px`,
     );
@@ -214,11 +226,53 @@ export function MapCanvas({
     });
   };
 
+  const syncScoreViewport = (
+    transform = mapTransformRef.current,
+    surfaceSize = mapSurfaceSizeRef.current,
+  ) => {
+    const shell = mapShellRef.current;
+    if (!shell || !surfaceSize.width || !surfaceSize.height) return;
+
+    const scaledMapWidth = surfaceSize.width * transform.scale;
+    const scaledMapHeight = surfaceSize.height * transform.scale;
+    const screenCellWidth = scaledMapWidth / viewColumns;
+    const screenCellHeight = scaledMapHeight / viewRows;
+    if (Math.min(screenCellWidth, screenCellHeight) < SCORE_LABEL_MIN_CELL_PX) {
+      if (scoreViewportKeyRef.current) {
+        scoreViewportKeyRef.current = "";
+        setScoreCells([]);
+      }
+      return;
+    }
+
+    const shellWidth = shell.clientWidth;
+    const shellHeight = shell.clientHeight;
+    const clamp = (value, minimum, maximum) => Math.min(maximum, Math.max(minimum, value));
+    const minLocalX = clamp(Math.floor((-transform.positionX) / screenCellWidth) - 1, 0, viewColumns - 1);
+    const maxLocalX = clamp(Math.ceil((shellWidth - transform.positionX) / screenCellWidth) + 1, 0, viewColumns - 1);
+    const minLocalY = clamp(Math.floor((-transform.positionY) / screenCellHeight) - 1, 0, viewRows - 1);
+    const maxLocalY = clamp(Math.ceil((shellHeight - transform.positionY) / screenCellHeight) + 1, 0, viewRows - 1);
+    const nextKey = `${activeSubzoneCode ?? "queenstown"}:${minLocalX}:${maxLocalX}:${minLocalY}:${maxLocalY}`;
+    if (nextKey === scoreViewportKeyRef.current) return;
+
+    const nextCells = [];
+    for (let localY = minLocalY; localY <= maxLocalY; localY += 1) {
+      for (let localX = minLocalX; localX <= maxLocalX; localX += 1) {
+        const cell = viewCellByCoordinate.get(`${localX + viewBounds.minX}-${localY + viewBounds.minY}`);
+        if (cell) nextCells.push(cell);
+      }
+    }
+    scoreViewportKeyRef.current = nextKey;
+    setScoreCells(nextCells);
+  };
+
   useEffect(() => {
     const initialTransform = { scale: initialMapScale, positionX: 0, positionY: 0 };
     mapTransformRef.current = initialTransform;
     cellDetailRef.current = initialMapScale >= 3.5;
     setIsCellDetail(cellDetailRef.current);
+    scoreViewportKeyRef.current = "";
+    setScoreCells([]);
   }, [activeSubzoneCode, initialMapScale]);
 
   useEffect(() => {
@@ -237,6 +291,7 @@ export function MapCanvas({
         ? current
         : next);
       syncMapOverlay(mapTransformRef.current, next);
+      syncScoreViewport(mapTransformRef.current, next);
     };
     updateSize();
     const observer = new ResizeObserver(([entry]) => updateSize(entry.contentRect));
@@ -246,7 +301,47 @@ export function MapCanvas({
 
   useLayoutEffect(() => {
     syncMapOverlay();
-  }, [mapSurfaceSize, activeSubzoneCode, hoveredInView, hoveredSubzoneCode, visibleCandidates]);
+  }, [mapSurfaceSize, activeSubzoneCode, hoveredInView, hoveredSubzoneCode, scoreCells, visibleCandidates]);
+
+  useEffect(() => {
+    const controls = transformControlsRef.current;
+    const shell = mapShellRef.current;
+    const surfaceSize = mapSurfaceSizeRef.current;
+
+    if (!greedyDemo.open) {
+      if (previousDemoOpenRef.current && controls) {
+        controls.centerView(initialMapScale, 420, "easeInOutCubic");
+      }
+      previousDemoOpenRef.current = false;
+      return;
+    }
+
+    previousDemoOpenRef.current = true;
+    if (!controls || !shell || !surfaceSize.width || !surfaceSize.height) return;
+
+    if (greedyDemo.phase === "overview") {
+      controls.centerView(initialMapScale, Math.round(480 / greedyDemo.speed), "easeInOutCubic");
+      return;
+    }
+
+    if (greedyDemo.phase !== "focus" || !currentGreedyStep) return;
+    const localX = currentGreedyStep.station.x - viewBounds.minX + 0.5;
+    const localY = currentGreedyStep.station.y - viewBounds.minY + 0.5;
+    const baseCellSize = Math.min(surfaceSize.width / viewColumns, surfaceSize.height / viewRows);
+    const targetScale = Math.min(
+      MAX_MAP_SCALE,
+      Math.max(initialMapScale, DEMO_TARGET_CELL_PX / baseCellSize),
+    );
+    const positionX = shell.clientWidth / 2 - (localX / viewColumns) * surfaceSize.width * targetScale;
+    const positionY = shell.clientHeight / 2 - (localY / viewRows) * surfaceSize.height * targetScale;
+    controls.setTransform(
+      positionX,
+      positionY,
+      targetScale,
+      Math.round(560 / greedyDemo.speed),
+      "easeInOutCubic",
+    );
+  }, [currentGreedyStep, greedyDemo.open, greedyDemo.phase, greedyDemo.speed, initialMapScale, mapSurfaceSize, viewBounds.minX, viewBounds.minY, viewColumns, viewRows]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -388,7 +483,7 @@ export function MapCanvas({
           key={activeSubzoneCode ?? "queenstown"}
           initialScale={initialMapScale}
           minScale={0.42}
-          maxScale={48}
+          maxScale={MAX_MAP_SCALE}
           centerOnInit
           limitToBounds={false}
           smooth={false}
@@ -406,6 +501,7 @@ export function MapCanvas({
             };
             mapTransformRef.current = nextTransform;
             syncMapOverlay(nextTransform);
+            syncScoreViewport(nextTransform);
             const nextCellDetail = state.scale >= 3.5;
             if (nextCellDetail !== cellDetailRef.current) {
               cellDetailRef.current = nextCellDetail;
@@ -413,8 +509,11 @@ export function MapCanvas({
             }
           }}
         >
-          {({ zoomIn, zoomOut, centerView }) => (
-            <>
+          {(controls) => {
+            transformControlsRef.current = controls;
+            const { zoomIn, zoomOut, centerView } = controls;
+            return (
+              <>
               <div className="map-zoom-controls" aria-label="Map zoom controls" data-export-ignore="true">
                 <button type="button" title="Zoom in" aria-label="Zoom in" onClick={() => zoomIn(2, 0)}><ZoomIn size={17} /></button>
                 <button type="button" title="Zoom out" aria-label="Zoom out" onClick={() => zoomOut(2, 0)}><ZoomOut size={17} /></button>
@@ -476,6 +575,26 @@ export function MapCanvas({
                     />
                   )}
 
+                  {scoreCells.map((cell) => {
+                    const score = cell.water || cell.outside
+                      ? 0
+                      : scoreCell(cell, weights, enabled, placed);
+                    const isDemoTarget = currentGreedyStep?.station.id === cell.id;
+                    return (
+                      <span
+                        className={`map-cell-score ${score <= 0 ? "is-zero" : ""} ${isDemoTarget ? "is-demo-target" : ""} ${isDemoTarget && greedyDemo.phase === "applied" ? "is-changing" : ""}`}
+                        data-testid="map-cell-score"
+                        data-map-cell="true"
+                        data-map-x={cell.x}
+                        data-map-y={cell.y}
+                        key={cell.id}
+                        aria-hidden="true"
+                      >
+                        {score}
+                      </span>
+                    );
+                  })}
+
                   {!activeSubzone && MAP_SUBZONES.map((subzone) => (
                     <button
                       className="subzone-map-label"
@@ -501,9 +620,10 @@ export function MapCanvas({
                     const rank = candidateIndex.get(candidate.id);
                     const isStation = placedIds.has(candidate.id);
                     const isDemoCurrent = currentGreedyStep?.station.id === candidate.id;
+                    const isDemoDetail = isDemoCurrent && ["focus", "applied"].includes(greedyDemo.phase);
                     return (
                       <button
-                        className={`map-site-marker ${isStation ? "is-station" : ""} ${selected?.id === candidate.id ? "is-selected" : ""} ${isDemoCurrent ? "is-demo-current" : ""}`}
+                        className={`map-site-marker ${isStation ? "is-station" : ""} ${selected?.id === candidate.id ? "is-selected" : ""} ${isDemoCurrent ? "is-demo-current" : ""} ${isDemoDetail ? "is-demo-detail" : ""}`}
                         key={candidate.id}
                         type="button"
                         data-map-x={candidate.x}
@@ -523,8 +643,9 @@ export function MapCanvas({
                   })}
                 </div>
               )}
-            </>
-          )}
+              </>
+            );
+          }}
         </TransformWrapper>
 
         <ShelterRoster

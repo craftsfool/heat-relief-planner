@@ -28,6 +28,7 @@ const DEFAULT_CANDIDATE_COUNT = 12;
 const INITIAL_GREEDY_DEMO = {
   open: false,
   status: "idle",
+  phase: "idle",
   steps: [],
   stepIndex: -1,
   speed: 1,
@@ -152,29 +153,47 @@ export default function App() {
   };
 
   const advanceGreedyDemo = () => {
+    if (!greedyDemo.steps.length) return;
+
+    if (greedyDemo.phase === "focus") {
+      setPlaced(greedyDemo.steps.slice(0, greedyDemo.stepIndex + 1).map((step) => step.station));
+      setGreedyDemo((current) => ({ ...current, phase: "applied" }));
+      return;
+    }
+
+    if (greedyDemo.phase === "applied") {
+      setGreedyDemo((current) => ({ ...current, phase: "overview" }));
+      return;
+    }
+
     const nextIndex = greedyDemo.stepIndex + 1;
     if (nextIndex >= greedyDemo.steps.length) {
-      setGreedyDemo((current) => ({ ...current, status: "complete" }));
+      setGreedyDemo((current) => ({ ...current, status: "complete", phase: "overview" }));
       return;
     }
 
     const nextStep = greedyDemo.steps[nextIndex];
-    setPlaced(greedyDemo.steps.slice(0, nextIndex + 1).map((step) => step.station));
     setSelectedId(nextStep.station.id);
     setRadius(nextStep.station.radius);
     setGreedyDemo((current) => ({
       ...current,
       stepIndex: nextIndex,
-      status: nextIndex === current.steps.length - 1 ? "complete" : current.status,
+      phase: "focus",
     }));
   };
 
   useEffect(() => {
     if (greedyDemo.status !== "playing" || !greedyDemo.steps.length) return undefined;
-    const delay = (greedyDemo.stepIndex < 0 ? 650 : 1150) / greedyDemo.speed;
+    const phaseDelay = {
+      idle: 650,
+      focus: 1450,
+      applied: 1500,
+      overview: 850,
+    };
+    const delay = (phaseDelay[greedyDemo.phase] ?? 900) / greedyDemo.speed;
     const timer = window.setTimeout(advanceGreedyDemo, delay);
     return () => window.clearTimeout(timer);
-  }, [greedyDemo.speed, greedyDemo.status, greedyDemo.stepIndex, greedyDemo.steps]);
+  }, [greedyDemo.phase, greedyDemo.speed, greedyDemo.status, greedyDemo.stepIndex, greedyDemo.steps]);
 
   const startGreedyDemo = async () => {
     const runId = greedyDemoRunRef.current + 1;
@@ -216,6 +235,7 @@ export default function App() {
         status: steps.length ? "playing" : "complete",
         steps,
         stepIndex: -1,
+        phase: "idle",
         error: null,
       }));
     } catch (error) {
@@ -233,7 +253,7 @@ export default function App() {
       setPlaced([]);
       setSelectedId(visibleCandidates[0]?.id ?? null);
       setRadius(150);
-      setGreedyDemo((current) => ({ ...current, status: "playing", stepIndex: -1 }));
+      setGreedyDemo((current) => ({ ...current, status: "playing", stepIndex: -1, phase: "idle" }));
       return;
     }
     setGreedyDemo((current) => ({
@@ -246,7 +266,7 @@ export default function App() {
     setPlaced([]);
     setSelectedId(visibleCandidates[0]?.id ?? null);
     setRadius(150);
-    setGreedyDemo((current) => ({ ...current, status: "playing", stepIndex: -1 }));
+    setGreedyDemo((current) => ({ ...current, status: "playing", stepIndex: -1, phase: "idle" }));
   };
 
   const clearPlan = () => {
