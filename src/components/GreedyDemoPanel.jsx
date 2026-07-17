@@ -1,7 +1,9 @@
 import {
   CircleDollarSign,
   Gauge,
+  GripHorizontal,
   LoaderCircle,
+  MoveDiagonal2,
   Pause,
   Play,
   RotateCcw,
@@ -9,6 +11,7 @@ import {
   TrendingDown,
   X,
 } from "lucide-react";
+import { useFloatingPanel } from "../hooks/useFloatingPanel";
 
 const STATUS_LABELS = {
   solving: "Preparing",
@@ -27,6 +30,11 @@ export function GreedyDemoPanel({
   onClose,
   onSpeed,
 }) {
+  const { panelRef, style, hasCustomFrame, dragHandleProps, resizeHandleProps } = useFloatingPanel({
+    active: demo.open,
+    minWidth: 280,
+    minHeight: 250,
+  });
   if (!demo.open) return null;
 
   const completedSteps = Math.max(0, demo.stepIndex + 1);
@@ -35,8 +43,11 @@ export function GreedyDemoPanel({
   const isPlaying = demo.status === "playing";
 
   return (
-    <section className={`greedy-demo-panel is-${demo.status}`} aria-label="Greedy algorithm decision demo">
+    <section ref={panelRef} style={style} className={`greedy-demo-panel is-${demo.status} ${hasCustomFrame ? "is-custom-frame" : ""}`} aria-label="Greedy algorithm decision demo">
       <header className="greedy-demo-header">
+        <button className="floating-drag-handle" type="button" title="Drag greedy demo window" aria-label="Drag greedy demo window" {...dragHandleProps}>
+          <GripHorizontal size={15} />
+        </button>
         <div>
           <Gauge size={16} />
           <strong>Greedy decision demo</strong>
@@ -111,6 +122,9 @@ export function GreedyDemoPanel({
           </select>
         </label>
       </footer>
+      <span className="floating-resize-handle" title="Resize greedy demo window" aria-label="Resize greedy demo window" {...resizeHandleProps}>
+        <MoveDiagonal2 size={13} />
+      </span>
     </section>
   );
 }

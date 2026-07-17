@@ -3,6 +3,7 @@ import {
   Check,
   Download,
   LoaderCircle,
+  MapPinned,
   Maximize2,
   Play,
   ZoomIn,
@@ -84,6 +85,7 @@ export function MapCanvas({
   const mapOverlayRef = useRef(null);
   const canvasRef = useRef(null);
   const [exportStatus, setExportStatus] = useState("idle");
+  const [isRosterVisible, setIsRosterVisible] = useState(true);
   const [hoveredSubzoneCode, setHoveredSubzoneCode] = useState(null);
   const activeSubzone = MAP_SUBZONES.find((subzone) => subzone.code === activeSubzoneCode) ?? null;
   const initialMapScale = activeSubzone ? 1.35 : 0.82;
@@ -525,7 +527,29 @@ export function MapCanvas({
           )}
         </TransformWrapper>
 
-        <ShelterRoster placed={placed} candidates={candidates} cells={cells} selected={selected} onSelect={onSelect} />
+        <ShelterRoster
+          placed={placed}
+          candidates={candidates}
+          cells={cells}
+          selected={selected}
+          visible={isRosterVisible}
+          onSelect={onSelect}
+          onHide={() => setIsRosterVisible(false)}
+        />
+
+        {!isRosterVisible && (
+          <button
+            className="floating-window-restore"
+            data-export-ignore="true"
+            type="button"
+            title="Show built shelters window"
+            aria-label="Show built shelters window"
+            onClick={() => setIsRosterVisible(true)}
+          >
+            <MapPinned size={16} />
+            <strong>{placed.length}</strong>
+          </button>
+        )}
 
         <GreedyDemoPanel
           demo={greedyDemo}
