@@ -38,6 +38,8 @@ self.onmessage = ({ data }) => {
     rows,
     radii,
     scoreReduction,
+    includeTrace = false,
+    greedyOnly = false,
   } = data;
 
   try {
@@ -119,7 +121,8 @@ self.onmessage = ({ data }) => {
     };
 
     const potentialById = new Map();
-    const extendGreedy = (initialSolution, collectPotential = false) => {
+    const greedySteps = [];
+    const extendGreedy = (initialSolution, collectPotential = false, recordSteps = false) => {
       const solution = [...initialSolution];
       const selectedIds = new Set(solution.map((station) => station.id));
       const coverageState = buildCoverage(solution);
@@ -129,12 +132,14 @@ self.onmessage = ({ data }) => {
       while (true) {
         const remainingBudget = budget - spent;
         let best = null;
+        let evaluatedOptions = 0;
         for (const candidate of searchCandidates) {
           if (selectedIds.has(candidate.id)) continue;
           let bestCandidateDensity = 0;
           for (const radius of radii) {
             const cost = stationCost(candidate, radius);
             if (cost > remainingBudget) continue;
+            evaluatedOptions += 1;
             const gain = marginalGain(candidate, radius, coverageState);
             const density = gain / cost;
             if (collectPotential && density > bestCandidateDensity) bestCandidateDensity = density;
@@ -155,12 +160,31 @@ self.onmessage = ({ data }) => {
         spent += best.cost;
         applyStation(best, best.radius, coverageState);
         iteration += 1;
-        self.postMessage({ id, progress: { phase: "greedy", iteration, score: Math.round(coverageValue(coverageState)) } });
+        const totalScore = Math.round(coverageValue(coverageState));
+        if (recordSteps) {
+          greedySteps.push({
+            iteration,
+            station: {
+              id: best.id,
+              x: best.x,
+              y: best.y,
+              radius: best.radius,
+              cost: best.cost,
+            },
+            marginalGain: Math.round(best.gain),
+            efficiency: Math.round(best.density * 100000),
+            totalScore,
+            spent,
+            remainingBudget: budget - spent,
+            evaluatedOptions,
+          });
+        }
+        self.postMessage({ id, progress: { phase: "greedy", iteration, score: totalScore } });
       }
       return { solution, coverageState, value: coverageValue(coverageState) };
     };
 
-    let result = extendGreedy([], true);
+    let result = extendGreedy([], true, includeTrace);
     const candidateById = new Map(searchCandidates.map((candidate) => [candidate.id, candidate]));
     const localPoolIds = [...potentialById.entries()]
       .sort((a, b) => b[1] - a[1])
@@ -171,7 +195,7 @@ self.onmessage = ({ data }) => {
     }
     const localPool = localPoolIds.map((candidateId) => candidateById.get(candidateId)).filter(Boolean);
 
-    for (let pass = 0; pass < LOCAL_PASSES; pass += 1) {
+    for (let pass = 0; pass < (greedyOnly ? 0 : LOCAL_PASSES); pass += 1) {
       let bestMove = null;
       for (let removeIndex = 0; removeIndex < result.solution.length; removeIndex += 1) {
         const reducedSolution = result.solution.filter((_, index) => index !== removeIndex);
@@ -210,6 +234,7 @@ self.onmessage = ({ data }) => {
 
     self.postMessage({
       id,
+      steps: includeTrace ? greedySteps : undefined,
       solution: result.solution.map(({ id: stationId, x, y, radius, cost }) => ({
         id: stationId,
         x,

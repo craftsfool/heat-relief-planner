@@ -4,12 +4,14 @@ import {
   Download,
   LoaderCircle,
   Maximize2,
+  Play,
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { TransformComponent, TransformWrapper } from "react-zoom-pan-pinch";
 import { toPng } from "html-to-image";
+import { GreedyDemoPanel } from "./GreedyDemoPanel";
 import { ShelterRoster } from "./ShelterRoster";
 import {
   getStationCoverage,
@@ -65,10 +67,17 @@ export function MapCanvas({
   hovered,
   placed,
   activeSubzoneCode,
+  greedyDemo,
   onSubzone,
   onMode,
   onSelect,
   onHover,
+  onStartGreedyDemo,
+  onToggleGreedyDemo,
+  onStepGreedyDemo,
+  onRestartGreedyDemo,
+  onCloseGreedyDemo,
+  onGreedyDemoSpeed,
 }) {
   const mapShellRef = useRef(null);
   const mapSurfaceRef = useRef(null);
@@ -116,6 +125,7 @@ export function MapCanvas({
     [candidates],
   );
   const placedIds = useMemo(() => new Set(placed.map((station) => station.id)), [placed]);
+  const currentGreedyStep = greedyDemo.steps[greedyDemo.stepIndex] ?? null;
   const hoveredInView = hovered && (!activeSubzone || hovered.subzoneCode === activeSubzone.code)
     ? hovered
     : null;
@@ -345,6 +355,18 @@ export function MapCanvas({
             <small>Low</small><small>High</small>
           </div>
           <button
+            className={`map-export-button greedy-demo-button ${greedyDemo.open ? "is-active" : ""}`}
+            data-testid="greedy-demo-button"
+            type="button"
+            title="Animate how the greedy algorithm chooses shelter sites"
+            aria-label="Start greedy algorithm decision demo"
+            disabled={greedyDemo.status === "solving"}
+            onClick={onStartGreedyDemo}
+          >
+            {greedyDemo.status === "solving" ? <LoaderCircle className="is-spinning" size={15} /> : <Play size={15} />}
+            <span>{greedyDemo.status === "solving" ? "Preparing" : "Greedy demo"}</span>
+          </button>
+          <button
             className={`map-export-button is-${exportStatus}`}
             data-testid="map-export-button"
             type="button"
@@ -476,9 +498,10 @@ export function MapCanvas({
                   {visibleCandidates.map((candidate) => {
                     const rank = candidateIndex.get(candidate.id);
                     const isStation = placedIds.has(candidate.id);
+                    const isDemoCurrent = currentGreedyStep?.station.id === candidate.id;
                     return (
                       <button
-                        className={`map-site-marker ${isStation ? "is-station" : ""} ${selected?.id === candidate.id ? "is-selected" : ""}`}
+                        className={`map-site-marker ${isStation ? "is-station" : ""} ${selected?.id === candidate.id ? "is-selected" : ""} ${isDemoCurrent ? "is-demo-current" : ""}`}
                         key={candidate.id}
                         type="button"
                         data-map-x={candidate.x}
@@ -503,6 +526,16 @@ export function MapCanvas({
         </TransformWrapper>
 
         <ShelterRoster placed={placed} candidates={candidates} cells={cells} selected={selected} onSelect={onSelect} />
+
+        <GreedyDemoPanel
+          demo={greedyDemo}
+          currentStep={currentGreedyStep}
+          onToggle={onToggleGreedyDemo}
+          onStep={onStepGreedyDemo}
+          onRestart={onRestartGreedyDemo}
+          onClose={onCloseGreedyDemo}
+          onSpeed={onGreedyDemoSpeed}
+        />
 
         <div className="map-attribution">
           <a href={MAP_METADATA.boundarySource.url} target="_blank" rel="noreferrer">URA subzones</a>

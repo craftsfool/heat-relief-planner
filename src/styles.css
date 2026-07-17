@@ -365,6 +365,12 @@ button { color: inherit; }
 .map-export-button:disabled { cursor: wait; opacity: .72; }
 .map-export-button.is-done { color: #0f806d; border-color: rgba(15, 128, 109, .4); }
 .map-export-button.is-error { color: #b23a38; border-color: rgba(178, 58, 56, .4); }
+.greedy-demo-button { color: #0f6f60; border-color: rgba(15, 111, 96, .35); }
+.greedy-demo-button:hover:not(:disabled), .greedy-demo-button.is-active {
+  color: #0b5c50;
+  border-color: rgba(15, 111, 96, .58);
+  background: #effaf7;
+}
 .is-spinning { animation: export-spin .8s linear infinite; }
 @keyframes export-spin { to { transform: rotate(360deg); } }
 
@@ -498,6 +504,11 @@ button { color: inherit; }
   background: #0f806d;
   box-shadow: 0 0 0 2px #ffd24d, 0 0 var(--screen-beacon-glow) rgba(15, 128, 109, .65);
 }
+.map-site-marker.is-demo-current {
+  z-index: 19;
+  box-shadow: 0 0 0 3px #fff, 0 0 0 6px #e7b62a, 0 0 18px rgba(231, 182, 42, .95);
+  animation: greedy-marker-pulse .7s ease-in-out infinite alternate;
+}
 .map-site-marker:focus-visible { outline: 2px solid #ffd24d; outline-offset: 2px; }
 .map-cell-highlight {
   width: var(--screen-cell-size);
@@ -515,6 +526,10 @@ button { color: inherit; }
 @keyframes cell-hover-pulse {
   from { background-color: rgba(255, 255, 255, .14); }
   to { background-color: rgba(255, 255, 255, .5); }
+}
+@keyframes greedy-marker-pulse {
+  from { filter: brightness(1); }
+  to { filter: brightness(1.22); }
 }
 .map-zoom-controls {
   position: absolute;
@@ -645,6 +660,113 @@ button { color: inherit; }
 .shelter-details small { color: var(--muted); font-size: 8px; }
 .shelter-cost { color: #344054; font-size: 9px; font-weight: 800; white-space: nowrap; }
 .shelter-roster-empty { margin: 0; padding: 15px 10px; color: var(--muted); font-size: 10px; text-align: center; }
+.greedy-demo-panel {
+  position: absolute;
+  left: 58px;
+  bottom: 38px;
+  z-index: 45;
+  width: min(340px, calc(100% - 128px));
+  overflow: hidden;
+  color: var(--text);
+  background: rgba(255,255,255,.97);
+  border: 1px solid #9fb1c3;
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(16, 24, 40, .2);
+}
+.greedy-demo-header {
+  min-height: 39px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto 28px;
+  align-items: center;
+  gap: 7px;
+  padding: 0 7px 0 10px;
+  background: #f5f8fa;
+  border-bottom: 1px solid #d8e0e8;
+}
+.greedy-demo-header > div { min-width: 0; display: flex; align-items: center; gap: 7px; color: #29415e; }
+.greedy-demo-header strong { overflow: hidden; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.greedy-demo-header > button,
+.greedy-demo-controls > button {
+  display: grid;
+  place-items: center;
+  padding: 0;
+  color: #526173;
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.greedy-demo-header > button { width: 28px; height: 28px; }
+.greedy-demo-header > button:hover,
+.greedy-demo-controls > button:hover:not(:disabled) { color: var(--blue); background: #e8eef6; }
+.greedy-demo-status {
+  padding: 3px 6px;
+  color: #0f6f60;
+  background: #e4f5f0;
+  border-radius: 4px;
+  font-size: 8px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+.greedy-demo-panel.is-paused .greedy-demo-status { color: #865e08; background: #fff2c8; }
+.greedy-demo-panel.is-complete .greedy-demo-status { color: #315582; background: #e8f0fb; }
+.greedy-demo-panel.is-error .greedy-demo-status { color: #a33c32; background: #fff0ee; }
+.greedy-demo-progress { height: 3px; overflow: hidden; background: #e5eaf0; }
+.greedy-demo-progress i { height: 100%; display: block; background: #0f806d; transition: width 280ms ease; }
+.greedy-demo-content { min-height: 184px; padding: 11px; }
+.greedy-demo-waiting {
+  min-height: 160px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: #526173;
+  text-align: left;
+}
+.greedy-demo-waiting > div { display: grid; gap: 3px; }
+.greedy-demo-waiting strong { color: var(--text); font-size: 11px; }
+.greedy-demo-waiting span { font-size: 9px; }
+.greedy-demo-waiting.is-error { align-items: flex-start; flex-direction: column; min-height: 100px; color: #a33c32; }
+.greedy-demo-decision { display: grid; gap: 3px; padding-bottom: 9px; border-bottom: 1px solid #dde4ec; }
+.greedy-demo-decision > span { color: #0f806d; font-size: 8px; font-weight: 900; text-transform: uppercase; }
+.greedy-demo-decision > strong { font-size: 13px; }
+.greedy-demo-decision > small { color: var(--muted); font-size: 9px; }
+.greedy-demo-metrics { margin: 6px 0 0; }
+.greedy-demo-metrics > div {
+  min-height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid #edf0f4;
+}
+.greedy-demo-metrics > div:last-child { border-bottom: 0; }
+.greedy-demo-metrics dt, .greedy-demo-metrics dd { margin: 0; font-size: 9px; }
+.greedy-demo-metrics dt { display: inline-flex; align-items: center; gap: 5px; color: var(--muted); }
+.greedy-demo-metrics dt svg { color: #0f806d; }
+.greedy-demo-metrics dd { color: #25364a; font-weight: 800; text-align: right; }
+.greedy-demo-controls {
+  min-height: 39px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 8px;
+  background: #f6f8fb;
+  border-top: 1px solid #dce3ec;
+}
+.greedy-demo-controls > button { width: 29px; height: 29px; }
+.greedy-demo-controls > button:disabled { color: #b8c1cc; cursor: not-allowed; }
+.greedy-demo-controls label { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 8px; font-weight: 800; }
+.greedy-demo-controls select {
+  height: 27px;
+  padding: 0 22px 0 7px;
+  color: #29415e;
+  background: #fff;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  font-size: 9px;
+  font-weight: 800;
+}
 .map-attribution {
   position: absolute;
   right: 7px;
@@ -838,6 +960,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   .map-place-title span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .shelter-roster { top: 50px; right: 8px; }
   .shelter-roster.is-open { width: min(270px, calc(100% - 16px)); }
+  .greedy-demo-panel { left: 48px; bottom: 38px; width: min(340px, calc(100% - 56px)); }
   .hover-readout { right: 8px; }
   .subzone-map-label { max-width: 92px; padding: 4px; font-size: 7px; }
   .inspector { display: block; border-top: 1px solid var(--border); }
@@ -851,4 +974,5 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; }
+  .map-site-marker.is-demo-current { animation: none; }
 }

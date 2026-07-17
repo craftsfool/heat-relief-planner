@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Inspector } from "./components/Inspector";
 import { LayerPanel } from "./components/LayerPanel";
 import { MapCanvas } from "./components/MapCanvas";
@@ -21,10 +21,18 @@ import {
   scoreCell,
   selectChallengeSites,
 } from "./model/cityModel";
-import { generateGreedyLocalSolution } from "./model/greedyLocalSolution";
+import { generateGreedyDemonstration, generateGreedyLocalSolution } from "./model/greedyLocalSolution";
 
 const STARTING_BUDGET = 2_500_000;
 const DEFAULT_CANDIDATE_COUNT = 12;
+const INITIAL_GREEDY_DEMO = {
+  open: false,
+  status: "idle",
+  steps: [],
+  stepIndex: -1,
+  speed: 1,
+  error: null,
+};
 
 const initialWeights = Object.fromEntries(
   LAYER_DEFINITIONS.map((layer) => [layer.id, layer.defaultWeight]),
@@ -46,6 +54,8 @@ export default function App() {
   const [placed, setPlaced] = useState([]);
   const [activeSubzoneCode, setActiveSubzoneCode] = useState(null);
   const [candidateCount, setCandidateCount] = useState(DEFAULT_CANDIDATE_COUNT);
+  const [greedyDemo, setGreedyDemo] = useState(INITIAL_GREEDY_DEMO);
+  const greedyDemoRunRef = useRef(0);
   const [challengeIds, setChallengeIds] = useState(() =>
     selectChallengeSites(buildCity("afternoon", "baseline"), DEFAULT_CANDIDATE_COUNT)
       .map((cell) => cell.id),
@@ -133,7 +143,114 @@ export default function App() {
       }).at(-1) ?? STATION_RADII[0]
     : STATION_RADII[0];
 
+  const closeGreedyDemo = () => {
+    greedyDemoRunRef.current += 1;
+    setGreedyDemo((current) => ({
+      ...INITIAL_GREEDY_DEMO,
+      speed: current.speed,
+    }));
+  };
+
+  const advanceGreedyDemo = () => {
+    const nextIndex = greedyDemo.stepIndex + 1;
+    if (nextIndex >= greedyDemo.steps.length) {
+      setGreedyDemo((current) => ({ ...current, status: "complete" }));
+      return;
+    }
+
+    const nextStep = greedyDemo.steps[nextIndex];
+    setPlaced(greedyDemo.steps.slice(0, nextIndex + 1).map((step) => step.station));
+    setSelectedId(nextStep.station.id);
+    setRadius(nextStep.station.radius);
+    setGreedyDemo((current) => ({
+      ...current,
+      stepIndex: nextIndex,
+      status: nextIndex === current.steps.length - 1 ? "complete" : current.status,
+    }));
+  };
+
+  useEffect(() => {
+    if (greedyDemo.status !== "playing" || !greedyDemo.steps.length) return undefined;
+    const delay = (greedyDemo.stepIndex < 0 ? 650 : 1150) / greedyDemo.speed;
+    const timer = window.setTimeout(advanceGreedyDemo, delay);
+    return () => window.clearTimeout(timer);
+  }, [greedyDemo.speed, greedyDemo.status, greedyDemo.stepIndex, greedyDemo.steps]);
+
+  const startGreedyDemo = async () => {
+    const runId = greedyDemoRunRef.current + 1;
+    greedyDemoRunRef.current = runId;
+    setMode("composite");
+    setPlaced([]);
+    setHovered(null);
+    setGreedyDemo((current) => ({
+      ...INITIAL_GREEDY_DEMO,
+      open: true,
+      status: visibleCandidates.length ? "solving" : "error",
+      speed: current.speed,
+      error: visibleCandidates.length ? null : "No candidate sites are available in this map.",
+    }));
+    if (!visibleCandidates.length) return;
+
+    try {
+      const result = await generateGreedyDemonstration(
+        visibleCandidates,
+        planningCells,
+        STARTING_BUDGET,
+        weights,
+        enabled,
+      );
+      if (greedyDemoRunRef.current !== runId) return;
+      const candidateDetails = new Map(candidates.map((candidate, index) => [candidate.id, {
+        rank: index + 1,
+        zone: candidate.zone,
+      }]));
+      const steps = result.steps.map((step) => ({
+        ...step,
+        rank: candidateDetails.get(step.station.id)?.rank ?? "?",
+        zone: candidateDetails.get(step.station.id)?.zone ?? "Unknown zone",
+      }));
+      setSelectedId(visibleCandidates[0]?.id ?? null);
+      setRadius(150);
+      setGreedyDemo((current) => ({
+        ...current,
+        status: steps.length ? "playing" : "complete",
+        steps,
+        stepIndex: -1,
+        error: null,
+      }));
+    } catch (error) {
+      if (greedyDemoRunRef.current !== runId) return;
+      setGreedyDemo((current) => ({
+        ...current,
+        status: "error",
+        error: error instanceof Error ? error.message : "Greedy search failed.",
+      }));
+    }
+  };
+
+  const toggleGreedyDemo = () => {
+    if (greedyDemo.status === "complete") {
+      setPlaced([]);
+      setSelectedId(visibleCandidates[0]?.id ?? null);
+      setRadius(150);
+      setGreedyDemo((current) => ({ ...current, status: "playing", stepIndex: -1 }));
+      return;
+    }
+    setGreedyDemo((current) => ({
+      ...current,
+      status: current.status === "playing" ? "paused" : "playing",
+    }));
+  };
+
+  const restartGreedyDemo = () => {
+    setPlaced([]);
+    setSelectedId(visibleCandidates[0]?.id ?? null);
+    setRadius(150);
+    setGreedyDemo((current) => ({ ...current, status: "playing", stepIndex: -1 }));
+  };
+
   const clearPlan = () => {
+    closeGreedyDemo();
     setSelectedId(visibleCandidates[0]?.id ?? null);
     setHovered(null);
     setRadius(150);
@@ -141,6 +258,7 @@ export default function App() {
   };
 
   const startChallenge = (count) => {
+    closeGreedyDemo();
     const nextCandidates = selectChallengeSites(planningCells, count);
     const nextIds = nextCandidates.map((cell) => cell.id);
     const rankedNext = rankChallengeSites(cells, nextIds, weights, enabled);
@@ -159,6 +277,7 @@ export default function App() {
   };
 
   const applyRandomSolution = () => {
+    closeGreedyDemo();
     const solution = generateRandomSolution(visibleCandidates, planningCells, STARTING_BUDGET);
     setPlaced(solution);
     setSelectedId(solution[0]?.id ?? visibleCandidates[0]?.id ?? null);
@@ -166,6 +285,7 @@ export default function App() {
   };
 
   const applyImprovedSolution = async () => {
+    closeGreedyDemo();
     const solution = await generateGreedyLocalSolution(
       visibleCandidates,
       planningCells,
@@ -180,6 +300,7 @@ export default function App() {
   };
 
   const applyGlobalImprovedSolution = async () => {
+    closeGreedyDemo();
     const buildableCells = planningCells.filter((cell) => cell.buildable);
     const solution = await generateGreedyLocalSolution(
       buildableCells,
@@ -203,6 +324,7 @@ export default function App() {
 
   const placeStation = () => {
     if (!selected?.buildable || !isCandidate || isPlaced || budget < metrics.cost) return;
+    closeGreedyDemo();
     setSelectedId(selected.id);
     setPlaced((current) => [
       ...current,
@@ -218,10 +340,12 @@ export default function App() {
 
   const removeStation = () => {
     if (!selectedStation) return;
+    closeGreedyDemo();
     setPlaced((current) => current.filter((station) => station.id !== selectedStation.id));
   };
 
   const changeRadius = (value) => {
+    closeGreedyDemo();
     if (!selectedStation) {
       setRadius(value);
       return;
@@ -241,9 +365,15 @@ export default function App() {
     <div className="app-shell">
       <TopBar
         scenario={scenario}
-        onScenarioChange={setScenario}
+        onScenarioChange={(value) => {
+          closeGreedyDemo();
+          setScenario(value);
+        }}
         time={time}
-        onTimeChange={setTime}
+        onTimeChange={(value) => {
+          closeGreedyDemo();
+          setTime(value);
+        }}
         budget={budget}
         placedCount={placed.length}
         gameScore={gameScore}
@@ -261,9 +391,15 @@ export default function App() {
           weights={weights}
           enabled={enabled}
           activeLayer={activeLayer}
-          onToggle={(id) => setEnabled((current) => ({ ...current, [id]: !current[id] }))}
+          onToggle={(id) => {
+            closeGreedyDemo();
+            setEnabled((current) => ({ ...current, [id]: !current[id] }));
+          }}
           onCandidateCount={changeCandidateCount}
-          onWeight={(id, value) => setWeights((current) => ({ ...current, [id]: value }))}
+          onWeight={(id, value) => {
+            closeGreedyDemo();
+            setWeights((current) => ({ ...current, [id]: value }));
+          }}
           onSelect={(id) => {
             setActiveLayer(id);
             if (mode === "base") setMode("single");
@@ -281,7 +417,9 @@ export default function App() {
           hovered={hovered}
           placed={placed}
           activeSubzoneCode={activeSubzoneCode}
+          greedyDemo={greedyDemo}
           onSubzone={(code) => {
+            closeGreedyDemo();
             setActiveSubzoneCode(code);
             const firstVisibleCandidate = code
               ? candidates.find((candidate) => candidate.subzoneCode === code)
@@ -290,8 +428,18 @@ export default function App() {
             setHovered(null);
           }}
           onMode={setMode}
-          onSelect={(cell) => challengeIdSet.has(cell.id) && setSelectedId(cell.id)}
+          onSelect={(cell) => {
+            if (!challengeIdSet.has(cell.id)) return;
+            closeGreedyDemo();
+            setSelectedId(cell.id);
+          }}
           onHover={setHovered}
+          onStartGreedyDemo={startGreedyDemo}
+          onToggleGreedyDemo={toggleGreedyDemo}
+          onStepGreedyDemo={advanceGreedyDemo}
+          onRestartGreedyDemo={restartGreedyDemo}
+          onCloseGreedyDemo={closeGreedyDemo}
+          onGreedyDemoSpeed={(speed) => setGreedyDemo((current) => ({ ...current, speed }))}
         />
         <Inspector
           cell={selected}
