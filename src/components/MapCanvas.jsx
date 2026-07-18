@@ -114,6 +114,34 @@ export function MapCanvas({
   const renderedMode = introView?.mode ?? mode;
   const renderedActiveLayer = introView?.layer ?? activeLayer;
   const activeSubzone = MAP_SUBZONES.find((subzone) => subzone.code === activeSubzoneCode) ?? null;
+
+  useEffect(() => {
+    const mapShell = mapShellRef.current;
+    if (!mapShell) return undefined;
+
+    // Chromium reports trackpad pinch as Ctrl+wheel. Keep that zoom gesture
+    // inside the map while TransformWrapper receives the same event.
+    const keepZoomInMap = (event) => {
+      if (event.ctrlKey && event.cancelable) event.preventDefault();
+    };
+    const preventSafariGestureZoom = (event) => {
+      if (event.cancelable) event.preventDefault();
+    };
+
+    mapShell.addEventListener("wheel", keepZoomInMap, {
+      capture: true,
+      passive: false,
+    });
+    mapShell.addEventListener("gesturestart", preventSafariGestureZoom, { passive: false });
+    mapShell.addEventListener("gesturechange", preventSafariGestureZoom, { passive: false });
+
+    return () => {
+      mapShell.removeEventListener("wheel", keepZoomInMap, true);
+      mapShell.removeEventListener("gesturestart", preventSafariGestureZoom);
+      mapShell.removeEventListener("gesturechange", preventSafariGestureZoom);
+    };
+  }, []);
+
   const initialMapScale = activeSubzone ? 1.35 : 0.82;
   const mapTransformRef = useRef({
     scale: initialMapScale,
