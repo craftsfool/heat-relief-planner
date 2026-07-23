@@ -22,9 +22,16 @@ const getSolverWorker = () => {
       }
       pendingRequests.delete(data.id);
       if (data.error) request.reject(new Error(data.error));
-      else request.resolve(request.includeTrace
-        ? { solution: data.solution, steps: data.steps ?? [] }
-        : data.solution);
+      else if (request.includeTrace) {
+        request.resolve({ solution: data.solution, steps: data.steps ?? [] });
+      } else if (request.fullTraversal) {
+        request.resolve({
+          solution: data.solution,
+          refinementIds: data.refinementIds ?? data.solution.map((station) => station.id),
+        });
+      } else {
+        request.resolve(data.solution);
+      }
     };
     solverWorker.onerror = (event) => {
       pendingRequests.forEach(({ reject }) => reject(new Error(event.message || "Greedy local solver failed")));
@@ -41,7 +48,12 @@ export function generateGreedyLocalSolution(
   budget,
   weights,
   enabledLayers,
-  { onProgress, includeTrace = false, greedyOnly = false } = {},
+  {
+    onProgress,
+    includeTrace = false,
+    greedyOnly = false,
+    fullTraversal = false,
+  } = {},
 ) {
   const id = nextRequestId;
   nextRequestId += 1;
@@ -61,7 +73,13 @@ export function generateGreedyLocalSolution(
     }));
 
   return new Promise((resolve, reject) => {
-    pendingRequests.set(id, { resolve, reject, onProgress, includeTrace });
+    pendingRequests.set(id, {
+      resolve,
+      reject,
+      onProgress,
+      includeTrace,
+      fullTraversal,
+    });
     getSolverWorker().postMessage({
       id,
       candidates,
@@ -73,6 +91,7 @@ export function generateGreedyLocalSolution(
       scoreReduction: SHELTER_SCORE_REDUCTION,
       includeTrace,
       greedyOnly,
+      fullTraversal,
     });
   });
 }

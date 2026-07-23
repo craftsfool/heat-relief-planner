@@ -1,10 +1,10 @@
 # Heat Relief Planner
 
-Long-pressing **New game** runs an exact branch-and-bound solver over the current
-candidate sites and all five shelter radii. The objective is lexicographic:
-maximize effective composite-priority reduction, then population reached, then
-minimize cost. Sparse coverage profiles, greedy incumbents, budget relaxation,
-spatial upper bounds, and dominance pruning accelerate the optimality proof.
+Long-pressing **New game** traverses every buildable cell and all five shelter
+radii on the current map. It builds a full-map greedy/local-search plan, then
+runs exact branch-and-bound refinement over the strongest locations discovered
+during traversal. The objective is lexicographic: maximize effective
+composite-priority reduction, then population reached, then minimize cost.
 
 An interactive pixel-grid planning tool for exploring heat-relief station placement in Queenstown, Singapore.
 

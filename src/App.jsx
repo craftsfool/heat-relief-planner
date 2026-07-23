@@ -331,14 +331,25 @@ export default function App() {
 
   const applyGlobalImprovedSolution = async () => {
     closeGreedyDemo();
+    const buildableCells = planningCells.filter((cell) => cell.buildable);
+    const traversal = await generateGreedyLocalSolution(
+      buildableCells,
+      planningCells,
+      STARTING_BUDGET,
+      weights,
+      enabled,
+      { fullTraversal: true },
+    );
+    const refinementIdSet = new Set(traversal.refinementIds);
+    const refinementPool = buildableCells.filter((cell) => refinementIdSet.has(cell.id));
     const { solution, stats } = await generateExactOptimalSolution(
-      visibleCandidates,
+      refinementPool,
       planningCells,
       STARTING_BUDGET,
       weights,
       enabled,
     );
-    if (!stats.optimal) throw new Error("The solver finished without an optimality proof.");
+    if (!stats.optimal) throw new Error("The refinement solver finished without an optimality proof.");
     const solutionIds = solution.map((station) => station.id);
     const rankedSolution = rankChallengeSites(cells, solutionIds, weights, enabled);
     setChallengeIds(solutionIds);

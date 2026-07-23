@@ -87,12 +87,12 @@ export function TopBar({
           idleIcon={Shuffle}
           holdIcon={Earth}
           idleLabel="New game"
-          holdLabel="Hold for exact optimum"
-          workingLabel="Proving optimum"
-          completeLabel="Optimal proven"
+          holdLabel="Hold for full-map search"
+          workingLabel="Scanning full map"
+          completeLabel="Full map scanned"
           errorLabel="Search failed"
-          title={`Click for ${candidateCount} new fixed sites. Press and hold, or Shift-click, to prove the globally optimal site-radius plan among the current candidates.`}
-          ariaLabel="New game. Press and hold, or Shift-click, to prove the globally optimal plan among the current candidate sites."
+          title={`Click for ${candidateCount} new fixed sites. Press and hold, or Shift-click, to evaluate every buildable cell and radius, then run exact refinement.`}
+          ariaLabel="New game. Press and hold, or Shift-click, to scan every buildable map cell and refine the full-map plan."
           onClick={onNewChallenge}
           onHold={onGlobalSolution}
         />

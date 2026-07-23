@@ -3,6 +3,7 @@ const CELL_HALF_DIAGONAL = Math.SQRT2 / 2;
 const LOCAL_POOL_LIMIT = 700;
 const LOCAL_PASSES = 2;
 const GLOBAL_PRIORITY_POOL = 900;
+const REFINEMENT_POOL_LIMIT = 36;
 const SPATIAL_BLOCK_CELLS = 16;
 
 const buildOffsets = (radii) => new Map(radii.map((radius) => {
@@ -40,6 +41,7 @@ self.onmessage = ({ data }) => {
     scoreReduction,
     includeTrace = false,
     greedyOnly = false,
+    fullTraversal = false,
   } = data;
 
   try {
@@ -50,6 +52,7 @@ self.onmessage = ({ data }) => {
     const candidatePriority = (candidate) =>
       (candidate.score + 1) / stationCost(candidate, radii[0]);
     const preselectCandidates = () => {
+      if (fullTraversal) return candidates;
       if (candidates.length <= GLOBAL_PRIORITY_POOL * 2) return candidates;
       const ranked = [...candidates].sort((a, b) => candidatePriority(b) - candidatePriority(a));
       const selectedById = new Map(
@@ -70,7 +73,7 @@ self.onmessage = ({ data }) => {
     self.postMessage({
       id,
       progress: {
-        phase: "screening",
+        phase: fullTraversal ? "traversal" : "screening",
         candidateCount: candidates.length,
         searchCount: searchCandidates.length,
       },
@@ -232,9 +235,20 @@ self.onmessage = ({ data }) => {
       self.postMessage({ id, progress: { phase: "local", iteration: pass + 1, score: Math.round(result.value) } });
     }
 
+    const refinementIds = [
+      ...new Set([
+        ...result.solution.map((station) => station.id),
+        ...[...potentialById.entries()]
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, REFINEMENT_POOL_LIMIT)
+          .map(([candidateId]) => candidateId),
+      ]),
+    ];
+
     self.postMessage({
       id,
       steps: includeTrace ? greedySteps : undefined,
+      refinementIds: fullTraversal ? refinementIds : undefined,
       solution: result.solution.map(({ id: stationId, x, y, radius, cost }) => ({
         id: stationId,
         x,
