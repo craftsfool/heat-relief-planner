@@ -1,5 +1,11 @@
 # Heat Relief Planner
 
+Long-pressing **New game** runs an exact branch-and-bound solver over the current
+candidate sites and all five shelter radii. The objective is lexicographic:
+maximize effective composite-priority reduction, then population reached, then
+minimize cost. Sparse coverage profiles, greedy incumbents, budget relaxation,
+spatial upper bounds, and dominance pruning accelerate the optimality proof.
+
 An interactive pixel-grid planning tool for exploring heat-relief station placement in Queenstown, Singapore.
 
 The base grid uses the URA Master Plan 2019 planning-area boundary and OpenStreetMap features. Heat exposure, vulnerable population, pedestrian flow, and cooling-facility values are modelling proxies for project exploration rather than official measurements.

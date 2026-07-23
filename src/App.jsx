@@ -22,6 +22,7 @@ import {
   selectChallengeSites,
 } from "./model/cityModel";
 import { generateGreedyDemonstration, generateGreedyLocalSolution } from "./model/greedyLocalSolution";
+import { generateExactOptimalSolution } from "./model/exactOptimalSolution";
 
 const STARTING_BUDGET = 2_500_000;
 const DEFAULT_CANDIDATE_COUNT = 12;
@@ -330,14 +331,14 @@ export default function App() {
 
   const applyGlobalImprovedSolution = async () => {
     closeGreedyDemo();
-    const buildableCells = planningCells.filter((cell) => cell.buildable);
-    const solution = await generateGreedyLocalSolution(
-      buildableCells,
+    const { solution, stats } = await generateExactOptimalSolution(
+      visibleCandidates,
       planningCells,
       STARTING_BUDGET,
       weights,
       enabled,
     );
+    if (!stats.optimal) throw new Error("The solver finished without an optimality proof.");
     const solutionIds = solution.map((station) => station.id);
     const rankedSolution = rankChallengeSites(cells, solutionIds, weights, enabled);
     setChallengeIds(solutionIds);

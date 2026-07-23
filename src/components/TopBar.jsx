@@ -87,12 +87,12 @@ export function TopBar({
           idleIcon={Shuffle}
           holdIcon={Earth}
           idleLabel="New game"
-          holdLabel="Hold to optimize"
-          workingLabel="Optimizing map"
-          completeLabel="Strategy ready"
+          holdLabel="Hold for exact optimum"
+          workingLabel="Proving optimum"
+          completeLabel="Optimal proven"
           errorLabel="Search failed"
-          title={`Click for ${candidateCount} new fixed sites. Press and hold, or Shift-click, for spatially screened greedy and local search across the current map.`}
-          ariaLabel="New game. Press and hold, or Shift-click, to optimize across the current map."
+          title={`Click for ${candidateCount} new fixed sites. Press and hold, or Shift-click, to prove the globally optimal site-radius plan among the current candidates.`}
+          ariaLabel="New game. Press and hold, or Shift-click, to prove the globally optimal plan among the current candidate sites."
           onClick={onNewChallenge}
           onHold={onGlobalSolution}
         />

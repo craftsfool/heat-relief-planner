@@ -6,8 +6,10 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "benchmark:solver": "node scripts/benchmark-exact-solver.mjs",
     "generate:queenstown": "node scripts/generate-queenstown-grid.mjs",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:solver": "node scripts/verify-exact-solver.mjs"
   },
   "dependencies": {
     "@vitejs/plugin-react": "latest",
