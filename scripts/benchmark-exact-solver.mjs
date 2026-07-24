@@ -3,7 +3,6 @@ import { solveExactOptimal } from "../src/model/exactOptimalCore.js";
 
 const CANDIDATE_COUNT = 20;
 const BUDGET = 2_500_000;
-const RADII = [100, 150, 200, 250, 300];
 
 const makeRandom = (seed) => {
   let state = seed;
@@ -48,9 +47,9 @@ try {
       budget: BUDGET,
       columns: cityModel.GRID_COLS,
       rows: cityModel.GRID_ROWS,
-      radii: RADII,
-      capacities: cityModel.STATION_CAPACITY_BY_RADIUS,
-      baseCosts: cityModel.BASE_COST_BY_RADIUS,
+      serviceRadius: cityModel.FIXED_SERVICE_RADIUS,
+      capacityOptions: cityModel.STATION_CAPACITIES,
+      costModel: cityModel.STATION_COST_MODEL,
     });
     console.log({
       seed,

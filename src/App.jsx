@@ -6,11 +6,13 @@ import { StatusBar } from "./components/StatusBar";
 import { TopBar } from "./components/TopBar";
 import {
   CELL_SIZE_METRES,
+  DEFAULT_STATION_CAPACITY,
+  FIXED_SERVICE_RADIUS,
   GRID_COLS,
   GRID_ROWS,
   LAYER_DEFINITIONS,
   MAP_SUBZONES,
-  STATION_RADII,
+  STATION_CAPACITIES,
   buildCity,
   generateRandomSolution,
   getCellMetrics,
@@ -47,7 +49,7 @@ export default function App() {
   const [activeLayer, setActiveLayer] = useState("demand");
   const [selectedId, setSelectedId] = useState(null);
   const [hovered, setHovered] = useState(null);
-  const [radius, setRadius] = useState(150);
+  const [capacity, setCapacity] = useState(DEFAULT_STATION_CAPACITY);
   const [placed, setPlaced] = useState([]);
   const [activeSubzoneCode, setActiveSubzoneCode] = useState(null);
   const [candidateCount, setCandidateCount] = useState(DEFAULT_CANDIDATE_COUNT);
@@ -88,7 +90,7 @@ export default function App() {
   const candidateRank = visibleCandidates.findIndex((candidate) => candidate.id === selected?.id) + 1;
   const isCandidate = candidateRank > 0;
   const selectedStation = placed.find((station) => station.id === selected?.id);
-  const effectiveRadius = selectedStation?.radius ?? radius;
+  const effectiveCapacity = selectedStation?.capacity ?? capacity;
   const demandState = useMemo(
     () => getDemandState(planningCells, placed),
     [placed, planningCells],
@@ -103,8 +105,8 @@ export default function App() {
     [placed, selectedStation],
   );
   const calculatedMetrics = useMemo(
-    () => getCellMetrics(selected, effectiveRadius, planningCells, metricBaseStations),
-    [selected, effectiveRadius, metricBaseStations, planningCells],
+    () => getCellMetrics(selected, effectiveCapacity, planningCells, metricBaseStations),
+    [selected, effectiveCapacity, metricBaseStations, planningCells],
   );
   const metrics = selectedStation
     ? { ...calculatedMetrics, cost: selectedStation.cost }
@@ -119,16 +121,16 @@ export default function App() {
   const placedIds = useMemo(() => new Set(placed.map((station) => station.id)), [placed]);
   const cheapestRemainingCost = visibleCandidates.reduce((minimum, candidate) => {
     if (placedIds.has(candidate.id)) return minimum;
-    return Math.min(minimum, getCellMetrics(candidate, STATION_RADII[0], planningCells).cost);
+    return Math.min(minimum, getCellMetrics(candidate, STATION_CAPACITIES[0], planningCells).cost);
   }, Number.POSITIVE_INFINITY);
   const budgetLocked = visibleCandidates.length > 0 && budget < cheapestRemainingCost;
-  const maxAffordableRadius = selected
-    ? STATION_RADII.filter((option) => {
+  const maxAffordableCapacity = selected
+    ? STATION_CAPACITIES.filter((option) => {
         const optionCost = getCellMetrics(selected, option, planningCells).cost;
         const available = selectedStation ? budget + selectedStation.cost : budget;
         return optionCost <= available;
-      }).at(-1) ?? STATION_RADII[0]
-    : STATION_RADII[0];
+      }).at(-1) ?? STATION_CAPACITIES[0]
+    : STATION_CAPACITIES[0];
 
   const closeGreedyDemo = () => {
     greedyDemoRunRef.current += 1;
@@ -162,7 +164,7 @@ export default function App() {
 
     const nextStep = greedyDemo.steps[nextIndex];
     setSelectedId(nextStep.station.id);
-    setRadius(nextStep.station.radius);
+    setCapacity(nextStep.station.capacity);
     setGreedyDemo((current) => ({
       ...current,
       stepIndex: nextIndex,
@@ -216,7 +218,7 @@ export default function App() {
         zone: candidateDetails.get(step.station.id)?.zone ?? "Unknown zone",
       }));
       setSelectedId(visibleCandidates[0]?.id ?? null);
-      setRadius(150);
+      setCapacity(DEFAULT_STATION_CAPACITY);
       setGreedyDemo((current) => ({
         ...current,
         status: steps.length ? "playing" : "complete",
@@ -239,7 +241,7 @@ export default function App() {
     if (greedyDemo.status === "complete") {
       setPlaced([]);
       setSelectedId(visibleCandidates[0]?.id ?? null);
-      setRadius(150);
+      setCapacity(DEFAULT_STATION_CAPACITY);
       setGreedyDemo((current) => ({ ...current, status: "playing", stepIndex: -1, phase: "intro" }));
       return;
     }
@@ -252,7 +254,7 @@ export default function App() {
   const restartGreedyDemo = () => {
     setPlaced([]);
     setSelectedId(visibleCandidates[0]?.id ?? null);
-    setRadius(150);
+    setCapacity(DEFAULT_STATION_CAPACITY);
     setGreedyDemo((current) => ({ ...current, status: "playing", stepIndex: -1, phase: "intro" }));
   };
 
@@ -266,7 +268,7 @@ export default function App() {
     closeGreedyDemo();
     setSelectedId(visibleCandidates[0]?.id ?? null);
     setHovered(null);
-    setRadius(150);
+    setCapacity(DEFAULT_STATION_CAPACITY);
     setPlaced([]);
   };
 
@@ -278,7 +280,7 @@ export default function App() {
     setChallengeIds(nextIds);
     setSelectedId(rankedNext[0]?.id ?? null);
     setHovered(null);
-    setRadius(150);
+    setCapacity(DEFAULT_STATION_CAPACITY);
     setPlaced([]);
   };
 
@@ -294,7 +296,7 @@ export default function App() {
     const solution = generateRandomSolution(visibleCandidates, planningCells, STARTING_BUDGET);
     setPlaced(solution);
     setSelectedId(solution[0]?.id ?? visibleCandidates[0]?.id ?? null);
-    setRadius(solution[0]?.radius ?? 150);
+    setCapacity(solution[0]?.capacity ?? DEFAULT_STATION_CAPACITY);
   };
 
   const applyImprovedSolution = async () => {
@@ -306,7 +308,7 @@ export default function App() {
     );
     setPlaced(solution);
     setSelectedId(solution[0]?.id ?? visibleCandidates[0]?.id ?? null);
-    setRadius(solution[0]?.radius ?? 150);
+    setCapacity(solution[0]?.capacity ?? DEFAULT_STATION_CAPACITY);
     return solution;
   };
 
@@ -344,7 +346,7 @@ export default function App() {
         STARTING_BUDGET,
         { fullTraversal: true },
       );
-      const refinementLimit = activeSubzoneCode ? 10 : 24;
+      const refinementLimit = activeSubzoneCode ? 7 : 16;
       const refinementIdSet = new Set(traversal.refinementIds.slice(0, refinementLimit));
       const refinementPool = buildableCells.filter((cell) => refinementIdSet.has(cell.id));
       const exact = await generateExactOptimalSolution(
@@ -365,9 +367,10 @@ export default function App() {
     setPlaced(solution);
     setSelectedId(rankedSolution[0]?.id ?? null);
     setHovered(null);
-    setRadius(rankedSolution[0]
-      ? solution.find((station) => station.id === rankedSolution[0].id)?.radius ?? 150
-      : 150);
+    setCapacity(rankedSolution[0]
+      ? solution.find((station) => station.id === rankedSolution[0].id)?.capacity
+        ?? DEFAULT_STATION_CAPACITY
+      : DEFAULT_STATION_CAPACITY);
     return solution;
   };
 
@@ -381,8 +384,8 @@ export default function App() {
         id: selected.id,
         x: selected.x,
         y: selected.y,
-        radius,
-        capacity: metrics.capacity,
+        radius: FIXED_SERVICE_RADIUS,
+        capacity,
         cost: metrics.cost,
       },
     ]);
@@ -394,10 +397,10 @@ export default function App() {
     setPlaced((current) => current.filter((station) => station.id !== selectedStation.id));
   };
 
-  const changeRadius = (value) => {
+  const changeCapacity = (value) => {
     closeGreedyDemo();
     if (!selectedStation) {
-      setRadius(value);
+      setCapacity(value);
       return;
     }
     const withoutSelected = placed.filter((station) => station.id !== selectedStation.id);
@@ -408,8 +411,8 @@ export default function App() {
         station.id === selectedStation.id
           ? {
               ...station,
-              radius: value,
-              capacity: nextMetrics.capacity,
+              radius: FIXED_SERVICE_RADIUS,
+              capacity: value,
               cost: nextMetrics.cost,
             }
           : station,
@@ -482,14 +485,15 @@ export default function App() {
         <Inspector
           cell={selected}
           localDemand={selectedLocalDemand}
-          radius={effectiveRadius}
+          radius={FIXED_SERVICE_RADIUS}
+          capacity={effectiveCapacity}
           metrics={metrics}
           budget={budget}
           candidateRank={candidateRank}
           isCandidate={isCandidate}
           isPlaced={isPlaced}
-          maxAffordableRadius={maxAffordableRadius}
-          onRadius={changeRadius}
+          maxAffordableCapacity={maxAffordableCapacity}
+          onCapacity={changeCapacity}
           onPlace={placeStation}
           onRemove={removeStation}
         />

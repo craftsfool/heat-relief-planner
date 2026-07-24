@@ -1,9 +1,9 @@
 import {
   GRID_COLS,
   GRID_ROWS,
-  BASE_COST_BY_RADIUS,
-  STATION_RADII,
-  STATION_CAPACITY_BY_RADIUS,
+  FIXED_SERVICE_RADIUS,
+  STATION_CAPACITIES,
+  STATION_COST_MODEL,
   getDemandState,
 } from "./cityModel.js";
 
@@ -139,9 +139,9 @@ export function generateGreedyLocalSolution(
     budget,
     columns: GRID_COLS,
     rows: GRID_ROWS,
-    radii: STATION_RADII,
-    capacities: STATION_CAPACITY_BY_RADIUS,
-    baseCosts: BASE_COST_BY_RADIUS,
+    serviceRadius: FIXED_SERVICE_RADIUS,
+    capacityOptions: STATION_CAPACITIES,
+    costModel: STATION_COST_MODEL,
     includeTrace,
     greedyOnly,
     fullTraversal,

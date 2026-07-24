@@ -1,40 +1,50 @@
 const CELL_SIZE_METRES = 20;
 const EPSILON = 1e-8;
 const COST_UNIT = 1000;
-const DEFAULT_CAPACITIES = { 100: 500, 150: 1000, 200: 2000, 250: 3000, 300: 4500 };
-const DEFAULT_BASE_COSTS = { 100: 180000, 150: 240000, 200: 320000, 250: 410000, 300: 510000 };
-
-const ringCache = new Map();
-const buildRings = (radii) => {
-  const key = radii.join(",");
-  if (ringCache.has(key)) return ringCache.get(key);
-  const result = new Map(radii.map((radius) => {
-    const reach = Math.ceil(radius / CELL_SIZE_METRES);
-    const maximumDistanceSquared = (radius / CELL_SIZE_METRES) ** 2;
-    const offsetsByDistance = new Map();
-    for (let offsetY = -reach; offsetY <= reach; offsetY += 1) {
-      for (let offsetX = -reach; offsetX <= reach; offsetX += 1) {
-        const distanceSquared = offsetX ** 2 + offsetY ** 2;
-        if (distanceSquared > maximumDistanceSquared) continue;
-        const band = offsetsByDistance.get(distanceSquared) ?? [];
-        band.push({ x: offsetX, y: offsetY });
-        offsetsByDistance.set(distanceSquared, band);
-      }
-    }
-    const rings = [...offsetsByDistance.entries()]
-      .sort(([distanceA], [distanceB]) => distanceA - distanceB)
-      .map(([, offsets]) => offsets);
-    return [radius, rings];
-  }));
-  ringCache.set(key, result);
-  return result;
+const DEFAULT_SERVICE_RADIUS = 300;
+const DEFAULT_CAPACITY_OPTIONS = [500, 1000, 1500, 2000, 2500, 3000, 3500, 4000, 4500];
+const DEFAULT_COST_MODEL = {
+  fixed: 55_000,
+  linear: 55,
+  quadratic: 0.015,
+  minimumRegionalMultiplier: 0.85,
+  maximumRegionalMultiplier: 1.20,
 };
 
-const stationCost = (candidate, radius, baseCosts) => {
+const ringCache = new Map();
+const buildRings = (radius) => {
+  if (ringCache.has(radius)) return ringCache.get(radius);
+  const reach = Math.ceil(radius / CELL_SIZE_METRES);
+  const maximumDistanceSquared = (radius / CELL_SIZE_METRES) ** 2;
+  const offsetsByDistance = new Map();
+  for (let offsetY = -reach; offsetY <= reach; offsetY += 1) {
+    for (let offsetX = -reach; offsetX <= reach; offsetX += 1) {
+      const distanceSquared = offsetX ** 2 + offsetY ** 2;
+      if (distanceSquared > maximumDistanceSquared) continue;
+      const band = offsetsByDistance.get(distanceSquared) ?? [];
+      band.push({ x: offsetX, y: offsetY });
+      offsetsByDistance.set(distanceSquared, band);
+    }
+  }
+  const rings = [...offsetsByDistance.entries()]
+    .sort(([distanceA], [distanceB]) => distanceA - distanceB)
+    .map(([, offsets]) => offsets);
+  ringCache.set(radius, rings);
+  return rings;
+};
+
+const stationCost = (candidate, capacity, costModel) => {
   const localIndex = Number.isFinite(candidate.housingCostIndex) && candidate.housingCostIndex > 0
     ? candidate.housingCostIndex
     : 1;
-  return Math.round((baseCosts[radius] * localIndex) / 1000) * 1000;
+  const regionalMultiplier = Math.min(
+    costModel.maximumRegionalMultiplier,
+    Math.max(costModel.minimumRegionalMultiplier, localIndex),
+  );
+  const baseCost = costModel.fixed
+    + costModel.linear * capacity
+    + costModel.quadratic * capacity ** 2;
+  return Math.round((baseCost * regionalMultiplier) / 1000) * 1000;
 };
 
 const isBetter = (score, population, spent, incumbent) => {
@@ -51,9 +61,9 @@ export function solveExactOptimal({
   budget,
   columns,
   rows,
-  radii,
-  capacities = DEFAULT_CAPACITIES,
-  baseCosts = DEFAULT_BASE_COSTS,
+  serviceRadius = DEFAULT_SERVICE_RADIUS,
+  capacityOptions = DEFAULT_CAPACITY_OPTIONS,
+  costModel = DEFAULT_COST_MODEL,
   onProgress,
 }) {
   const startedAt = performance.now();
@@ -65,7 +75,7 @@ export function solveExactOptimal({
     heatExposure[index] = Math.max(0, cell.heat ?? 0);
     initialDemand[index] = Math.max(0, cell.population);
   }
-  const ringsByRadius = buildRings(radii);
+  const serviceRings = buildRings(serviceRadius);
 
   const evaluateOption = (option, residual) => {
     let remainingCapacity = option.capacity;
@@ -114,27 +124,27 @@ export function solveExactOptimal({
 
   const rawGroups = candidates.map((candidate) => {
     const options = [];
-    for (const radius of radii) {
-      const cost = stationCost(candidate, radius, baseCosts);
+    const candidateRings = serviceRings.map((ring) => ring
+      .map((offset) => {
+        const x = candidate.x + offset.x;
+        const y = candidate.y + offset.y;
+        return x < 0 || x >= columns || y < 0 || y >= rows
+          ? -1
+          : y * columns + x;
+      })
+      .filter((index) => index >= 0 && initialDemand[index] > 0)
+      .sort((a, b) => heatExposure[b] - heatExposure[a] || a - b));
+    for (const capacity of capacityOptions) {
+      const cost = stationCost(candidate, capacity, costModel);
       if (cost > budget) continue;
-      const rings = ringsByRadius.get(radius).map((ring) => ring
-        .map((offset) => {
-          const x = candidate.x + offset.x;
-          const y = candidate.y + offset.y;
-          return x < 0 || x >= columns || y < 0 || y >= rows
-            ? -1
-            : y * columns + x;
-        })
-        .filter((index) => index >= 0 && initialDemand[index] > 0)
-        .sort((a, b) => heatExposure[b] - heatExposure[a] || a - b));
       const option = {
         id: candidate.id,
         x: candidate.x,
         y: candidate.y,
-        radius,
-        capacity: capacities[radius],
+        radius: serviceRadius,
+        capacity,
         cost,
-        rings,
+        rings: candidateRings,
       };
       const standalone = evaluateOption(option, initialDemand);
       if (standalone.score <= EPSILON && standalone.population <= EPSILON) continue;

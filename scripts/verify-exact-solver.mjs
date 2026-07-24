@@ -2,13 +2,27 @@ import assert from "node:assert/strict";
 import { solveExactOptimal } from "../src/model/exactOptimalCore.js";
 
 const EPSILON = 1e-8;
-const RADII = [20, 40, 60];
-const CAPACITIES = { 20: 20, 40: 45, 60: 80 };
-const BASE_COSTS = { 20: 90_000, 40: 130_000, 60: 180_000 };
+const SERVICE_RADIUS = 60;
+const CAPACITY_OPTIONS = [20, 45, 80];
+const COST_MODEL = {
+  fixed: 60_000,
+  linear: 1_000,
+  quadratic: 10,
+  minimumRegionalMultiplier: 0.7,
+  maximumRegionalMultiplier: 1.3,
+};
 const BUDGET = 390_000;
 
-const stationCost = (candidate, radius) =>
-  Math.round((BASE_COSTS[radius] * candidate.housingCostIndex) / 1000) * 1000;
+const stationCost = (candidate, capacity) => {
+  const regionalMultiplier = Math.min(
+    COST_MODEL.maximumRegionalMultiplier,
+    Math.max(COST_MODEL.minimumRegionalMultiplier, candidate.housingCostIndex),
+  );
+  const baseCost = COST_MODEL.fixed
+    + COST_MODEL.linear * capacity
+    + COST_MODEL.quadratic * capacity ** 2;
+  return Math.round((baseCost * regionalMultiplier) / 1000) * 1000;
+};
 
 const evaluate = (selection, demandCells, columns, rows) => {
   const residual = new Float64Array(columns * rows);
@@ -20,9 +34,9 @@ const evaluate = (selection, demandCells, columns, rows) => {
   }
   let population = 0;
   for (const station of selection) {
-    let capacity = CAPACITIES[station.radius];
-    const reach = Math.ceil(station.radius / 20);
-    const maximumDistanceSquared = (station.radius / 20) ** 2;
+    let capacity = station.capacity;
+    const reach = Math.ceil(SERVICE_RADIUS / 20);
+    const maximumDistanceSquared = (SERVICE_RADIUS / 20) ** 2;
     const offsetsByDistance = new Map();
     for (let offsetY = -reach; offsetY <= reach; offsetY += 1) {
       for (let offsetX = -reach; offsetX <= reach; offsetX += 1) {
@@ -86,14 +100,14 @@ const bruteForce = (candidates, demandCells, columns, rows) => {
       return;
     }
     visit(index + 1, spent);
-    for (const radius of RADII) {
+    for (const capacity of CAPACITY_OPTIONS) {
       const candidate = candidates[index];
-      const cost = stationCost(candidate, radius);
+      const cost = stationCost(candidate, capacity);
       if (spent + cost > BUDGET) continue;
       selection.push({
         ...candidate,
-        radius,
-        capacity: CAPACITIES[radius],
+        radius: SERVICE_RADIUS,
+        capacity,
         cost,
       });
       visit(index + 1, spent + cost);
@@ -139,9 +153,9 @@ for (const seed of [7, 19, 41, 83, 131]) {
   const exact = solveExactOptimal({
     ...testCase,
     budget: BUDGET,
-    radii: RADII,
-    capacities: CAPACITIES,
-    baseCosts: BASE_COSTS,
+    serviceRadius: SERVICE_RADIUS,
+    capacityOptions: CAPACITY_OPTIONS,
+    costModel: COST_MODEL,
   });
   const brute = bruteForce(
     testCase.candidates,

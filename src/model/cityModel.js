@@ -1,5 +1,19 @@
 import queenstownGrid from "../data/queenstownGrid.json" with { type: "json" };
 import { allocatePopulationToStations } from "./populationAllocation.js";
+import {
+  DEFAULT_STATION_CAPACITY,
+  FIXED_SERVICE_RADIUS,
+  STATION_CAPACITIES,
+  getStationCost,
+} from "./stationModel.js";
+
+export {
+  DEFAULT_STATION_CAPACITY,
+  FIXED_SERVICE_RADIUS,
+  STATION_CAPACITIES,
+  STATION_COST_MODEL,
+  getStationCost,
+} from "./stationModel.js";
 
 export const GRID_COLS = queenstownGrid.metadata.columns;
 export const GRID_ROWS = queenstownGrid.metadata.rows;
@@ -20,22 +34,6 @@ export const PLANNING_WEIGHTS = Object.freeze({
   }),
 });
 export const DEMAND_DENSITY_BANDWIDTH_METRES = 160;
-export const STATION_RADII = [100, 150, 200, 250, 300];
-export const STATION_CAPACITY_BY_RADIUS = {
-  100: 500,
-  150: 1000,
-  200: 2000,
-  250: 3000,
-  300: 4500,
-};
-export const BASE_COST_BY_RADIUS = {
-  100: 180_000,
-  150: 240_000,
-  200: 320_000,
-  250: 410_000,
-  300: 510_000,
-};
-
 export const LAYER_DEFINITIONS = [
   {
     id: "demand",
@@ -243,8 +241,7 @@ const demandLayerSurfaceFor = (demandState) => {
   return cached;
 };
 
-const stationCapacity = (station) =>
-  station.capacity ?? STATION_CAPACITY_BY_RADIUS[station.radius] ?? 0;
+const stationCapacity = (station) => station.capacity ?? 0;
 
 const applyShelterToDemand = (residual, available, heatExposure, shelter) => {
   let remainingCapacity = stationCapacity(shelter);
@@ -441,7 +438,7 @@ export function rankChallengeSites(cells, siteIds) {
     .map((id) => cellById.get(id))
     .filter(Boolean)
     .map((cell) => {
-      const metrics = getCellMetrics(cell, 150, cells);
+      const metrics = getCellMetrics(cell, DEFAULT_STATION_CAPACITY, cells);
       return {
         ...cell,
         potentialPeople: metrics.peopleReached,
@@ -466,7 +463,7 @@ export function getPopulationReached(cells, placedStations = []) {
   return Math.round(getDemandState(cells, placedStations).servedByPlaced);
 }
 
-export function getCellMetrics(cell, radius, cells, placedStations = []) {
+export function getCellMetrics(cell, capacity, cells, placedStations = []) {
   if (!cell) return {
     cost: 0,
     capacity: 0,
@@ -478,23 +475,19 @@ export function getCellMetrics(cell, radius, cells, placedStations = []) {
     (other) =>
       !other.outside &&
       !other.water &&
-      distanceBetweenCellCentresMetres(other, cell) <= radius,
+      distanceBetweenCellCentresMetres(other, cell) <= FIXED_SERVICE_RADIUS,
   );
   const demand = covered.reduce(
     (sum, other) =>
       sum + other.heat * (0.58 * other.vulnerable + 0.42 * other.flow),
     0,
   );
-  const housingCostIndex = Number.isFinite(cell.housingCostIndex) && cell.housingCostIndex > 0
-    ? cell.housingCostIndex
-    : 1;
-  const cost = Math.round((BASE_COST_BY_RADIUS[radius] * housingCostIndex) / 1000) * 1000;
-  const capacity = STATION_CAPACITY_BY_RADIUS[radius];
+  const cost = getStationCost(cell, capacity);
   const proposed = {
     id: cell.id,
     x: cell.x,
     y: cell.y,
-    radius,
+    radius: FIXED_SERVICE_RADIUS,
     capacity,
     cost,
   };
@@ -516,18 +509,18 @@ export function generateRandomSolution(candidateCells, cells, budget, random = M
   let remainingBudget = budget;
 
   const placeRandomAffordableStation = (cell) => {
-    const affordableRadii = STATION_RADII.filter(
-      (radius) => getCellMetrics(cell, radius, cells).cost <= remainingBudget,
+    const affordableCapacities = STATION_CAPACITIES.filter(
+      (capacity) => getCellMetrics(cell, capacity, cells).cost <= remainingBudget,
     );
-    if (!affordableRadii.length) return false;
-    const radius = affordableRadii[Math.floor(random() * affordableRadii.length)];
-    const { cost } = getCellMetrics(cell, radius, cells);
+    if (!affordableCapacities.length) return false;
+    const capacity = affordableCapacities[Math.floor(random() * affordableCapacities.length)];
+    const { cost } = getCellMetrics(cell, capacity, cells);
     solution.push({
       id: cell.id,
       x: cell.x,
       y: cell.y,
-      radius,
-      capacity: STATION_CAPACITY_BY_RADIUS[radius],
+      radius: FIXED_SERVICE_RADIUS,
+      capacity,
       cost,
     });
     remainingBudget -= cost;
@@ -543,7 +536,7 @@ export function generateRandomSolution(candidateCells, cells, budget, random = M
     const affordable = remainingCandidates.filter(
       (cell) =>
         !placedIds.has(cell.id) &&
-        getCellMetrics(cell, STATION_RADII[0], cells).cost <= remainingBudget,
+        getCellMetrics(cell, STATION_CAPACITIES[0], cells).cost <= remainingBudget,
     );
     if (!affordable.length) break;
     placeRandomAffordableStation(affordable[Math.floor(random() * affordable.length)]);

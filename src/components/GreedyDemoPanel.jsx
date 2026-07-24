@@ -39,7 +39,7 @@ export function GreedyDemoPanel({
           </div>
           <p><span>People served</span><strong>+{currentStep.peopleServed.toLocaleString()}</strong></p>
           <p><span>Efficiency</span><strong>{currentStep.efficiency.toLocaleString()} people / $100k</strong></p>
-          <p><span>Radius · Capacity</span><strong>{currentStep.station.radius} m · {currentStep.station.capacity.toLocaleString()}</strong></p>
+          <p><span>Capacity · Radius</span><strong>{currentStep.station.capacity.toLocaleString()} · {currentStep.station.radius} m fixed</strong></p>
           <p><span>Cost</span><strong>${currentStep.station.cost.toLocaleString()}</strong></p>
           <p><span>Options · Budget left</span><strong>{currentStep.evaluatedOptions.toLocaleString()} · ${currentStep.remainingBudget.toLocaleString()}</strong></p>
         </section>

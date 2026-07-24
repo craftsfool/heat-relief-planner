@@ -5,7 +5,7 @@ const GLOBAL_PRIORITY_POOL = 900;
 const REFINEMENT_POOL_LIMIT = 24;
 const SPATIAL_BLOCK_CELLS = 16;
 
-const buildRings = (radii) => new Map(radii.map((radius) => {
+const buildRings = (radius) => {
   const reach = Math.ceil(radius / CELL_SIZE_METRES);
   const maximumDistanceSquared = (radius / CELL_SIZE_METRES) ** 2;
   const offsetsByDistance = new Map();
@@ -18,17 +18,23 @@ const buildRings = (radii) => new Map(radii.map((radius) => {
       offsetsByDistance.set(distanceSquared, band);
     }
   }
-  const rings = [...offsetsByDistance.entries()]
+  return [...offsetsByDistance.entries()]
     .sort(([distanceA], [distanceB]) => distanceA - distanceB)
     .map(([, offsets]) => offsets);
-  return [radius, rings];
-}));
+};
 
-const stationCost = (candidate, radius, baseCosts) => {
+const stationCost = (candidate, capacity, costModel) => {
   const localIndex = Number.isFinite(candidate.housingCostIndex) && candidate.housingCostIndex > 0
     ? candidate.housingCostIndex
     : 1;
-  return Math.round((baseCosts[radius] * localIndex) / 1000) * 1000;
+  const regionalMultiplier = Math.min(
+    costModel.maximumRegionalMultiplier,
+    Math.max(costModel.minimumRegionalMultiplier, localIndex),
+  );
+  const baseCost = costModel.fixed
+    + costModel.linear * capacity
+    + costModel.quadratic * capacity ** 2;
+  return Math.round((baseCost * regionalMultiplier) / 1000) * 1000;
 };
 
 export function solveGreedyLocal(input, { onProgress } = {}) {
@@ -38,14 +44,14 @@ export function solveGreedyLocal(input, { onProgress } = {}) {
     budget,
     columns,
     rows,
-    radii,
-    capacities,
-    baseCosts,
+    serviceRadius,
+    capacityOptions,
+    costModel,
     includeTrace = false,
     greedyOnly = false,
     fullTraversal = false,
   } = input;
-  const ringsByRadius = buildRings(radii);
+  const serviceRings = buildRings(serviceRadius);
   const heatExposure = new Float32Array(columns * rows);
   const initialDemand = new Float64Array(columns * rows);
   for (const cell of demandCells) {
@@ -54,11 +60,11 @@ export function solveGreedyLocal(input, { onProgress } = {}) {
     initialDemand[index] = Math.max(0, cell.population);
   }
 
-  const evaluateStation = (candidate, radius, residualDemand) => {
-    let remainingCapacity = capacities[radius] ?? 0;
+  const evaluateStation = (candidate, capacity, residualDemand) => {
+    let remainingCapacity = capacity;
     let gain = 0;
     let served = 0;
-    for (const ring of ringsByRadius.get(radius)) {
+    for (const ring of serviceRings) {
       const ringCells = [];
       let ringDemand = 0;
       for (const offset of ring) {
@@ -87,10 +93,10 @@ export function solveGreedyLocal(input, { onProgress } = {}) {
   };
 
   const applyStation = (station, residualDemand) => {
-    let remainingCapacity = station.capacity ?? capacities[station.radius] ?? 0;
+    let remainingCapacity = station.capacity ?? 0;
     let gain = 0;
     let served = 0;
-    for (const ring of ringsByRadius.get(station.radius)) {
+    for (const ring of serviceRings) {
       const ringCells = [];
       let ringDemand = 0;
       for (const offset of ring) {
@@ -132,7 +138,7 @@ export function solveGreedyLocal(input, { onProgress } = {}) {
   };
 
   const candidatePriority = (candidate) =>
-    (candidate.score + 1) / stationCost(candidate, radii[0], baseCosts);
+    (candidate.score + 1) / stationCost(candidate, capacityOptions[0], costModel);
   const preselectCandidates = () => {
     if (fullTraversal) return candidates;
     if (candidates.length <= GLOBAL_PRIORITY_POOL * 2) return candidates;
@@ -175,11 +181,11 @@ export function solveGreedyLocal(input, { onProgress } = {}) {
       for (const candidate of searchCandidates) {
         if (selectedIds.has(candidate.id)) continue;
         let bestCandidateDensity = 0;
-        for (const radius of radii) {
-          const cost = stationCost(candidate, radius, baseCosts);
+        for (const capacity of capacityOptions) {
+          const cost = stationCost(candidate, capacity, costModel);
           if (cost > remainingBudget) continue;
           evaluatedOptions += 1;
-          const result = evaluateStation(candidate, radius, state.residualDemand);
+          const result = evaluateStation(candidate, capacity, state.residualDemand);
           const density = result.gain / cost;
           if (collectPotential && density > bestCandidateDensity) bestCandidateDensity = density;
           if (
@@ -189,8 +195,8 @@ export function solveGreedyLocal(input, { onProgress } = {}) {
           ) {
             best = {
               ...candidate,
-              radius,
-              capacity: capacities[radius],
+              radius: serviceRadius,
+              capacity,
               cost,
               gain: result.gain,
               served: result.served,
@@ -266,10 +272,10 @@ export function solveGreedyLocal(input, { onProgress } = {}) {
       const reducedCost = reducedSolution.reduce((sum, station) => sum + station.cost, 0);
       for (const candidate of localPool) {
         if (reducedIds.has(candidate.id)) continue;
-        for (const radius of radii) {
-          const cost = stationCost(candidate, radius, baseCosts);
+        for (const capacity of capacityOptions) {
+          const cost = stationCost(candidate, capacity, costModel);
           if (reducedCost + cost > budget) continue;
-          const option = evaluateStation(candidate, radius, reduced.residualDemand);
+          const option = evaluateStation(candidate, capacity, reduced.residualDemand);
           const value = reduced.value + option.gain;
           if (value > result.value + 0.5 && (!bestMove || value > bestMove.value)) {
             bestMove = {
@@ -278,8 +284,8 @@ export function solveGreedyLocal(input, { onProgress } = {}) {
                 id: candidate.id,
                 x: candidate.x,
                 y: candidate.y,
-                radius,
-                capacity: capacities[radius],
+                radius: serviceRadius,
+                capacity,
                 cost,
               }],
             };

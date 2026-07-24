@@ -4,13 +4,14 @@ export function Inspector({
   cell,
   localDemand,
   radius,
+  capacity,
   metrics,
   budget,
   candidateRank,
   isCandidate,
   isPlaced,
-  maxAffordableRadius,
-  onRadius,
+  maxAffordableCapacity,
+  onCapacity,
   onPlace,
   onRemove,
 }) {
@@ -53,24 +54,30 @@ export function Inspector({
 
       <section className="radius-section">
         <div className="section-label">
-          <h3>Service radius</h3>
+          <div>
+            <h3>Station capacity</h3>
+            <span className="fixed-radius-label">{radius} m fixed service radius</span>
+          </div>
           <div className="radius-stepper">
             <button
               type="button"
-              title="Decrease service radius"
-              aria-label="Decrease service radius"
-              disabled={radius <= 100}
-              onClick={() => onRadius(Math.max(100, radius - 50))}
+              title="Decrease station capacity"
+              aria-label="Decrease station capacity"
+              disabled={capacity <= 500}
+              onClick={() => onCapacity(Math.max(500, capacity - 500))}
             >
               <Minus size={14} />
             </button>
-            <strong>{radius} m</strong>
+            <strong>{capacity.toLocaleString()}</strong>
             <button
               type="button"
-              title="Increase service radius"
-              aria-label="Increase service radius"
-              disabled={radius >= 300 || (isPlaced && radius >= maxAffordableRadius)}
-              onClick={() => onRadius(Math.min(isPlaced ? maxAffordableRadius : 300, radius + 50))}
+              title="Increase station capacity"
+              aria-label="Increase station capacity"
+              disabled={capacity >= 4500 || (isPlaced && capacity >= maxAffordableCapacity)}
+              onClick={() => onCapacity(Math.min(
+                isPlaced ? maxAffordableCapacity : 4500,
+                capacity + 500,
+              ))}
             >
               <Plus size={14} />
             </button>
@@ -78,17 +85,18 @@ export function Inspector({
         </div>
         <input
           type="range"
-          min="100"
-          max="300"
-          step="50"
-          value={radius}
-          title="Adjust service radius"
-          onChange={(event) => onRadius(Math.min(
-            isPlaced ? maxAffordableRadius : 300,
+          min="500"
+          max="4500"
+          step="500"
+          value={capacity}
+          title="Adjust station capacity"
+          aria-label="Adjust station capacity"
+          onChange={(event) => onCapacity(Math.min(
+            isPlaced ? maxAffordableCapacity : 4500,
             Number(event.target.value),
           ))}
         />
-        <div className="range-labels"><span>100 m</span><span>200 m</span><span>300 m</span></div>
+        <div className="range-labels"><span>500</span><span>2,500 people</span><span>4,500</span></div>
       </section>
 
       <div className="inspector-actions">
@@ -98,8 +106,8 @@ export function Inspector({
             <dd>${metrics.cost.toLocaleString()}</dd>
           </div>
           <div>
-            <dt><Users size={15} /> Capacity</dt>
-            <dd>{metrics.capacity.toLocaleString()} people</dd>
+            <dt><MapPin size={15} /> Service radius</dt>
+            <dd>{radius} m</dd>
           </div>
           <div>
             <dt><Users size={15} /> People served</dt>

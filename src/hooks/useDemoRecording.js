@@ -106,7 +106,7 @@ const drawRecordingFrame = (context, width, height, sourceCanvas, transform, dat
     const rows = [
       ["People served", `+${step.peopleServed.toLocaleString()}`],
       ["Efficiency", `${step.efficiency.toLocaleString()} people / $100k`],
-      ["Radius · Capacity", `${step.station.radius} m · ${step.station.capacity.toLocaleString()}`],
+      ["Capacity · Radius", `${step.station.capacity.toLocaleString()} · ${step.station.radius} m fixed`],
       ["Cost", `$${step.station.cost.toLocaleString()}`],
       ["Options · Budget left", `${step.evaluatedOptions.toLocaleString()} · $${step.remainingBudget.toLocaleString()}`],
     ];

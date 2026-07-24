@@ -1,5 +1,6 @@
 import { solveExactOptimal } from "./exactOptimalCore.js";
 import { solveGreedyLocal } from "./greedyLocalCore.js";
+import { getDemandState } from "./cityModel.js";
 import {
   createSolutionRecord,
   createSolverTask,
@@ -27,6 +28,12 @@ export function solveGlobalConfiguration(config, {
   if (!exact.stats.optimal) {
     throw new Error("The refinement solver finished without an optimality proof.");
   }
+  const jointAllocation = getDemandState(task.cells, exact.solution);
+  exact.stats.sequentialSolverObjective = exact.stats.objective;
+  exact.stats.population = Math.round(jointAllocation.servedByPlaced);
+  exact.stats.objective = exact.stats.population;
+  exact.stats.spent = exact.solution.reduce((sum, station) => sum + station.cost, 0);
+  exact.stats.allocationRule = "joint-max-flow-euclidean-distance-heat-tiebreak";
   exact.stats.traversedCandidateCount = task.candidates.length;
   exact.stats.refinementPoolLimit = Number.isFinite(refinementLimit)
     ? refinementLimit

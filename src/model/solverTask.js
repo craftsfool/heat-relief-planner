@@ -1,16 +1,16 @@
 import {
-  BASE_COST_BY_RADIUS,
+  FIXED_SERVICE_RADIUS,
   GRID_COLS,
   GRID_ROWS,
   MAP_METADATA,
   MAP_SUBZONES,
-  STATION_CAPACITY_BY_RADIUS,
-  STATION_RADII,
+  STATION_CAPACITIES,
+  STATION_COST_MODEL,
   buildCity,
   getDemandState,
 } from "./cityModel.js";
 
-export const SOLVER_SCHEMA_VERSION = 4;
+export const SOLVER_SCHEMA_VERSION = 5;
 export const STANDARD_BUDGET = 2_500_000;
 
 const compactDate = (value) => String(value ?? "unknown")
@@ -36,7 +36,7 @@ export function normalizeSolverConfig(config = {}) {
     : null;
   const requestedBudget = Number(config.budget);
   const budget = Number.isFinite(requestedBudget)
-    ? Math.max(180_000, Math.min(20_000_000, Math.round(requestedBudget / 1000) * 1000))
+    ? Math.max(75_000, Math.min(20_000_000, Math.round(requestedBudget / 1000) * 1000))
     : STANDARD_BUDGET;
 
   return { subzoneCode, budget };
@@ -97,9 +97,9 @@ export function createSolverTask(config = {}) {
       budget: normalized.budget,
       columns: GRID_COLS,
       rows: GRID_ROWS,
-      radii: STATION_RADII,
-      capacities: STATION_CAPACITY_BY_RADIUS,
-      baseCosts: BASE_COST_BY_RADIUS,
+      serviceRadius: FIXED_SERVICE_RADIUS,
+      capacityOptions: STATION_CAPACITIES,
+      costModel: STATION_COST_MODEL,
       fullTraversal: true,
     },
   };
@@ -127,6 +127,7 @@ export function validateSolutionRecord(record, config = {}) {
     typeof station.id === "string"
     && Number.isFinite(station.x)
     && Number.isFinite(station.y)
-    && Number.isFinite(station.radius)
+    && station.radius === FIXED_SERVICE_RADIUS
+    && STATION_CAPACITIES.includes(station.capacity)
     && Number.isFinite(station.cost));
 }

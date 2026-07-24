@@ -1102,6 +1102,7 @@ button { color: inherit; }
 .section-label { justify-content: space-between; gap: 10px; }
 .section-label h3 { margin: 0; font-size: 12px; }
 .section-label strong { font-size: 11px; }
+.fixed-radius-label { display: block; margin-top: 2px; color: var(--muted); font-size: 9px; }
 .radius-stepper { display: flex; align-items: center; gap: 6px; }
 .radius-stepper button {
   width: 25px;

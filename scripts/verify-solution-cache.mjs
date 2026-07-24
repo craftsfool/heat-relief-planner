@@ -3,11 +3,11 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  BASE_COST_BY_RADIUS,
+  FIXED_SERVICE_RADIUS,
   MAP_SUBZONES,
-  STATION_CAPACITY_BY_RADIUS,
-  STATION_RADII,
+  STATION_CAPACITIES,
   getDemandState,
+  getStationCost,
 } from "../src/model/cityModel.js";
 import {
   STANDARD_BUDGET,
@@ -37,45 +37,40 @@ for (const subzoneCode of scopes) {
     true,
     `Invalid solution cache: ${cachePath}`,
   );
-  if (!subzoneCode) {
-    const task = createSolverTask(config);
-    const demandState = getDemandState(task.cells, record.solution);
-    const reversedDemandState = getDemandState(task.cells, [...record.solution].reverse());
-    const spent = record.solution.reduce((sum, station) => sum + station.cost, 0);
-    assert.equal(Math.round(demandState.servedByPlaced), 36_000);
-    assert.equal(Math.round(reversedDemandState.servedByPlaced), 36_000);
+  const task = createSolverTask(config);
+  const candidateById = new Map(task.candidates.map((candidate) => [candidate.id, candidate]));
+  const demandState = getDemandState(task.cells, record.solution);
+  const reversedDemandState = getDemandState(task.cells, [...record.solution].reverse());
+  const spent = record.solution.reduce((sum, station) => sum + station.cost, 0);
+  assert.equal(Math.round(demandState.servedByPlaced), record.stats.population);
+  assert.equal(Math.round(reversedDemandState.servedByPlaced), record.stats.population);
+  assert.equal(spent, record.stats.spent);
+  assert.ok(spent <= STANDARD_BUDGET);
+  for (const station of record.solution) {
+    assert.equal(station.radius, FIXED_SERVICE_RADIUS);
+    assert.equal(STATION_CAPACITIES.includes(station.capacity), true);
+    assert.equal(station.cost, getStationCost(candidateById.get(station.id), station.capacity));
+    assert.ok((demandState.perStation.get(station.id) ?? 0) <= station.capacity + 1e-6);
+  }
+  for (let index = 0; index < demandState.servedByCell.length; index += 1) {
     assert.equal(
-      [...demandState.perStation.values()].every((served) => Math.abs(served - 4_500) < 1e-6),
+      demandState.servedByCell[index] <= demandState.afterExisting[index] + 1e-6,
       true,
     );
-    for (let index = 0; index < demandState.servedByCell.length; index += 1) {
-      assert.equal(
-        demandState.servedByCell[index] <= demandState.afterExisting[index] + 1e-6,
-        true,
-      );
-    }
-    assert.equal(spent, 2_499_000);
-
-    const minimumCostByRadius = Object.fromEntries(STATION_RADII.map((radius) => [
-      radius,
-      Math.min(...task.candidates.map((candidate) =>
-        Math.round((BASE_COST_BY_RADIUS[radius] * candidate.housingCostIndex) / 1000) * 1000)),
-    ]));
-    const capacityUpper = new Int32Array(STANDARD_BUDGET / 1000 + 1);
-    for (let budgetUnits = 0; budgetUnits < capacityUpper.length; budgetUnits += 1) {
-      for (const radius of STATION_RADII) {
-        const costUnits = minimumCostByRadius[radius] / 1000;
-        if (costUnits > budgetUnits) continue;
-        capacityUpper[budgetUnits] = Math.max(
-          capacityUpper[budgetUnits],
-          capacityUpper[budgetUnits - costUnits] + STATION_CAPACITY_BY_RADIUS[radius],
-        );
-      }
-    }
-    assert.equal(Math.max(...capacityUpper), 36_000);
-    assert.equal(record.stats.capacityUpperBound, 36_000);
   }
   verified += 1;
+}
+
+const referenceSite = { housingCostIndex: 1 };
+const referenceCosts = STATION_CAPACITIES.map((capacity) =>
+  getStationCost(referenceSite, capacity));
+const marginalCosts = referenceCosts.slice(1).map((cost, index) =>
+  cost - referenceCosts[index]);
+for (let index = 1; index < marginalCosts.length; index += 1) {
+  assert.ok(
+    marginalCosts[index] >= marginalCosts[index - 1],
+    "Station capacity cost must remain convex.",
+  );
 }
 
 assert.equal(verified, scopes.length);
