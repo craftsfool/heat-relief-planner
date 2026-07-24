@@ -10,7 +10,7 @@ import {
   getDemandState,
 } from "./cityModel.js";
 
-export const SOLVER_SCHEMA_VERSION = 3;
+export const SOLVER_SCHEMA_VERSION = 4;
 export const STANDARD_BUDGET = 2_500_000;
 
 const compactDate = (value) => String(value ?? "unknown")

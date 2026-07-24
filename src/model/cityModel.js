@@ -1,4 +1,5 @@
 import queenstownGrid from "../data/queenstownGrid.json" with { type: "json" };
+import { allocatePopulationToStations } from "./populationAllocation.js";
 
 export const GRID_COLS = queenstownGrid.metadata.columns;
 export const GRID_ROWS = queenstownGrid.metadata.rows;
@@ -331,26 +332,22 @@ const baselineDemandFor = (cells) => {
 export function getDemandState(cells, placedStations = []) {
   const baseline = baselineDemandFor(cells);
   const residual = baseline.afterExisting.slice();
-  const servedByCell = new Float64Array(GRID_COLS * GRID_ROWS);
-  const perStation = new Map();
-  let servedByPlaced = 0;
-  for (const station of placedStations) {
-    const result = applyShelterToDemand(
-      residual,
-      baseline.available,
-      baseline.heatExposure,
-      station,
-    );
-    servedByPlaced += result.served;
-    perStation.set(station.id, result.served);
-    for (const item of result.servedByCell) servedByCell[item.index] += item.amount;
-  }
+  const allocation = allocatePopulationToStations({
+    stations: placedStations,
+    residual,
+    available: baseline.available,
+    heatExposure: baseline.heatExposure,
+    columns: GRID_COLS,
+    rows: GRID_ROWS,
+    getDistanceBands,
+    stationCapacity,
+  });
   return {
     ...baseline,
     residual,
-    servedByCell,
-    servedByPlaced,
-    perStation,
+    servedByCell: allocation.servedByCell,
+    servedByPlaced: allocation.served,
+    perStation: allocation.perStation,
     remainingDemand: residual.reduce((sum, value) => sum + value, 0),
     maxRemainingDemand: residual.reduce((maximum, value) => Math.max(maximum, value), 0),
   };
