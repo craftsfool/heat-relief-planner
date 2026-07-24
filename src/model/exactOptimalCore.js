@@ -1,59 +1,32 @@
 const CELL_SIZE_METRES = 20;
-const CELL_HALF_DIAGONAL = Math.SQRT2 / 2;
-const COST_UNIT = 1000;
 const EPSILON = 1e-8;
-const DYNAMIC_BOUND_REMAINING = 9;
+const DEFAULT_CAPACITIES = { 100: 500, 150: 1000, 200: 2000, 250: 3000, 300: 4500 };
+const DEFAULT_BASE_COSTS = { 100: 180000, 150: 240000, 200: 320000, 250: 410000, 300: 510000 };
 
-const offsetCache = new Map();
-
-const buildOffsets = (radii) => {
+const ringCache = new Map();
+const buildRings = (radii) => {
   const key = radii.join(",");
-  const cached = offsetCache.get(key);
-  if (cached) return cached;
-
-  const offsets = new Map(radii.map((radius) => {
-    const radiusInCells = radius / CELL_SIZE_METRES;
-    const reach = Math.ceil(radiusInCells + 1);
-    const values = [];
+  if (ringCache.has(key)) return ringCache.get(key);
+  const result = new Map(radii.map((radius) => {
+    const reach = Math.floor(radius / CELL_SIZE_METRES);
+    const rings = Array.from({ length: reach + 1 }, () => []);
     for (let offsetY = -reach; offsetY <= reach; offsetY += 1) {
       for (let offsetX = -reach; offsetX <= reach; offsetX += 1) {
-        const distance = Math.max(0, Math.hypot(offsetX, offsetY) - CELL_HALF_DIAGONAL);
-        if (distance > radiusInCells) continue;
-        values.push({
-          x: offsetX,
-          y: offsetY,
-          coverage: Math.max(0, 1 - distance / radiusInCells),
-        });
+        const ring = Math.abs(offsetX) + Math.abs(offsetY);
+        if (ring <= reach) rings[ring].push({ x: offsetX, y: offsetY });
       }
     }
-    return [radius, values];
+    return [radius, rings];
   }));
-  offsetCache.set(key, offsets);
-  return offsets;
+  ringCache.set(key, result);
+  return result;
 };
 
-const stationCost = (candidate, radius) => {
-  const landFactor = 0.45 + 0.55 * candidate.flow;
-  return Math.round((160000 + radius * 650 + landFactor * 85000) / 1000) * 1000;
-};
-
-const fractionalUpper = (items, budget) => {
-  if (budget <= 0 || !items.length) return 0;
-  const ranked = items
-    .filter((item) => item.value > EPSILON && item.cost > 0)
-    .sort((a, b) => b.value / b.cost - a.value / a.cost);
-  let remaining = budget;
-  let value = 0;
-  for (const item of ranked) {
-    if (item.cost <= remaining) {
-      value += item.value;
-      remaining -= item.cost;
-      continue;
-    }
-    value += item.value * (remaining / item.cost);
-    break;
-  }
-  return value;
+const stationCost = (candidate, radius, baseCosts) => {
+  const localIndex = Number.isFinite(candidate.housingCostIndex) && candidate.housingCostIndex > 0
+    ? candidate.housingCostIndex
+    : 1;
+  return Math.round((baseCosts[radius] * localIndex) / 1000) * 1000;
 };
 
 const isBetter = (score, population, spent, incumbent) => {
@@ -64,6 +37,21 @@ const isBetter = (score, population, spent, incumbent) => {
   return spent < incumbent.spent;
 };
 
+const fractionalUpper = (items, budget) => {
+  const ranked = items
+    .filter((item) => item.value > EPSILON && item.cost > 0)
+    .sort((a, b) => b.value / b.cost - a.value / a.cost);
+  let remaining = budget;
+  let value = 0;
+  for (const item of ranked) {
+    if (remaining <= 0) break;
+    const fraction = Math.min(1, remaining / item.cost);
+    value += item.value * fraction;
+    remaining -= item.cost * fraction;
+  }
+  return value;
+};
+
 export function solveExactOptimal({
   candidates,
   demandCells,
@@ -71,194 +59,179 @@ export function solveExactOptimal({
   columns,
   rows,
   radii,
-  scoreReduction,
+  capacities = DEFAULT_CAPACITIES,
+  baseCosts = DEFAULT_BASE_COSTS,
   onProgress,
 }) {
   const startedAt = performance.now();
-  const offsetsByRadius = buildOffsets(radii);
   const gridSize = columns * rows;
-  const baseScores = new Float64Array(gridSize);
-  const populations = new Float64Array(gridSize);
-
+  const scores = new Float64Array(gridSize);
+  const initialDemand = new Float64Array(gridSize);
   for (const cell of demandCells) {
     const index = cell.y * columns + cell.x;
-    baseScores[index] = Math.max(0, cell.score);
-    populations[index] = Math.max(0, cell.population);
+    scores[index] = Math.max(0, cell.score);
+    initialDemand[index] = Math.max(0, cell.population);
   }
+  const ringsByRadius = buildRings(radii);
 
-  const rawGroups = candidates.map((candidate) => {
-    const options = [];
-    for (const radius of radii) {
-      const cost = stationCost(candidate, radius);
-      if (cost > budget) continue;
-      const gridIndices = [];
-      const coverages = [];
-      let standaloneScore = 0;
-      let standalonePopulation = 0;
-
-      for (const offset of offsetsByRadius.get(radius)) {
-        const x = candidate.x + offset.x;
-        const y = candidate.y + offset.y;
-        if (x < 0 || x >= columns || y < 0 || y >= rows) continue;
-        const gridIndex = y * columns + x;
-        if (baseScores[gridIndex] <= 0 && populations[gridIndex] <= 0) continue;
-        gridIndices.push(gridIndex);
-        coverages.push(offset.coverage);
-        standaloneScore += Math.min(baseScores[gridIndex], scoreReduction * offset.coverage);
-        standalonePopulation += populations[gridIndex] * offset.coverage;
-      }
-
-      if (standaloneScore > EPSILON || standalonePopulation > EPSILON) {
-        options.push({
-          id: candidate.id,
-          x: candidate.x,
-          y: candidate.y,
-          radius,
-          cost,
-          costUnits: Math.ceil(cost / COST_UNIT),
-          gridIndices,
-          coverages,
-          standaloneScore,
-          standalonePopulation,
-        });
-      }
-    }
-    return { candidate, options };
-  }).filter((group) => group.options.length > 0);
-
-  const compactByGrid = new Int32Array(gridSize);
-  compactByGrid.fill(-1);
-  const compactGridIndices = [];
-  for (const group of rawGroups) {
-    for (const option of group.options) {
-      for (const gridIndex of option.gridIndices) {
-        if (compactByGrid[gridIndex] >= 0) continue;
-        compactByGrid[gridIndex] = compactGridIndices.length;
-        compactGridIndices.push(gridIndex);
-      }
-    }
-  }
-
-  const compactScores = new Float64Array(compactGridIndices.length);
-  const compactPopulations = new Float64Array(compactGridIndices.length);
-  compactGridIndices.forEach((gridIndex, compactIndex) => {
-    compactScores[compactIndex] = baseScores[gridIndex];
-    compactPopulations[compactIndex] = populations[gridIndex];
-  });
-
-  const groups = rawGroups.map(({ candidate, options }) => {
-    const compactOptions = options.map((option) => ({
-      ...option,
-      indices: Int32Array.from(option.gridIndices.map((gridIndex) => compactByGrid[gridIndex])),
-      coverages: Float64Array.from(option.coverages),
-      gridIndices: undefined,
-    }));
-    const maxStandaloneScore = Math.max(...compactOptions.map((option) => option.standaloneScore));
-    const maxStandalonePopulation = Math.max(...compactOptions.map((option) => option.standalonePopulation));
-    const minCost = Math.min(...compactOptions.map((option) => option.cost));
-    return {
-      candidate,
-      options: compactOptions,
-      maxStandaloneScore,
-      maxStandalonePopulation,
-      minCost,
-    };
-  }).sort((a, b) => (
-    b.maxStandaloneScore / b.minCost - a.maxStandaloneScore / a.minCost
-    || b.maxStandalonePopulation / b.minCost - a.maxStandalonePopulation / a.minCost
-    || b.maxStandaloneScore - a.maxStandaloneScore
-  ));
-
-  const marginalGain = (option, coverage) => {
+  const evaluateOption = (option, residual) => {
+    let remainingCapacity = option.capacity;
     let score = 0;
     let population = 0;
-    for (let index = 0; index < option.indices.length; index += 1) {
-      const compactIndex = option.indices[index];
-      const nextCoverage = option.coverages[index];
-      const previousCoverage = coverage[compactIndex];
-      if (nextCoverage <= previousCoverage) continue;
-      score += Math.min(compactScores[compactIndex], scoreReduction * nextCoverage)
-        - Math.min(compactScores[compactIndex], scoreReduction * previousCoverage);
-      population += compactPopulations[compactIndex] * (nextCoverage - previousCoverage);
+    for (const ring of option.rings) {
+      const ringCells = [];
+      let ringDemand = 0;
+      for (const index of ring) {
+        const demand = residual[index];
+        if (demand <= 0) continue;
+        ringCells.push({ index, demand });
+        ringDemand += demand;
+      }
+      if (ringDemand <= 0) continue;
+      const served = Math.min(remainingCapacity, ringDemand);
+      const ratio = served / ringDemand;
+      for (const item of ringCells) {
+        score += item.demand * ratio * scores[item.index] / 100;
+      }
+      population += served;
+      remainingCapacity -= served;
+      if (remainingCapacity <= EPSILON) break;
     }
     return { score, population };
   };
 
-  const applyOption = (option, coverage) => {
-    const changedIndices = [];
-    const previousValues = [];
+  const applyOption = (option, residual) => {
+    let remainingCapacity = option.capacity;
     let score = 0;
     let population = 0;
-    for (let index = 0; index < option.indices.length; index += 1) {
-      const compactIndex = option.indices[index];
-      const nextCoverage = option.coverages[index];
-      const previousCoverage = coverage[compactIndex];
-      if (nextCoverage <= previousCoverage) continue;
-      changedIndices.push(compactIndex);
-      previousValues.push(previousCoverage);
-      coverage[compactIndex] = nextCoverage;
-      score += Math.min(compactScores[compactIndex], scoreReduction * nextCoverage)
-        - Math.min(compactScores[compactIndex], scoreReduction * previousCoverage);
-      population += compactPopulations[compactIndex] * (nextCoverage - previousCoverage);
+    const changes = [];
+    for (const ring of option.rings) {
+      const ringCells = [];
+      let ringDemand = 0;
+      for (const index of ring) {
+        const demand = residual[index];
+        if (demand <= 0) continue;
+        ringCells.push({ index, demand });
+        ringDemand += demand;
+      }
+      if (ringDemand <= 0) continue;
+      const served = Math.min(remainingCapacity, ringDemand);
+      const ratio = served / ringDemand;
+      for (const item of ringCells) {
+        const amount = item.demand * ratio;
+        changes.push({ index: item.index, previous: item.demand });
+        residual[item.index] = Math.max(0, item.demand - amount);
+        score += amount * scores[item.index] / 100;
+      }
+      population += served;
+      remainingCapacity -= served;
+      if (remainingCapacity <= EPSILON) break;
     }
-    return { score, population, changedIndices, previousValues };
+    return { score, population, changes };
   };
 
-  const rollbackOption = (change, coverage) => {
-    for (let index = 0; index < change.changedIndices.length; index += 1) {
-      coverage[change.changedIndices[index]] = change.previousValues[index];
-    }
+  const rollback = (change, residual) => {
+    for (const item of change.changes) residual[item.index] = item.previous;
   };
 
-  const greedySeed = (strategy) => {
-    const coverage = new Float64Array(compactGridIndices.length);
-    const selectedGroupIndices = new Set();
+  const rawGroups = candidates.map((candidate) => {
+    const options = [];
+    for (const radius of radii) {
+      const cost = stationCost(candidate, radius, baseCosts);
+      if (cost > budget) continue;
+      const rings = ringsByRadius.get(radius).map((ring) => ring
+        .map((offset) => {
+          const x = candidate.x + offset.x;
+          const y = candidate.y + offset.y;
+          return x < 0 || x >= columns || y < 0 || y >= rows
+            ? -1
+            : y * columns + x;
+        })
+        .filter((index) => index >= 0 && initialDemand[index] > 0));
+      const option = {
+        id: candidate.id,
+        x: candidate.x,
+        y: candidate.y,
+        radius,
+        capacity: capacities[radius],
+        cost,
+        rings,
+      };
+      const standalone = evaluateOption(option, initialDemand);
+      if (standalone.score <= EPSILON && standalone.population <= EPSILON) continue;
+      option.standaloneScore = standalone.score;
+      option.standalonePopulation = standalone.population;
+      options.push(option);
+    }
+    options.sort((a, b) => a.cost - b.cost);
+    const nonDominated = options.filter((option, index) => !options.slice(0, index).some((other) =>
+      other.cost <= option.cost
+      && other.standaloneScore >= option.standaloneScore - EPSILON
+      && other.standalonePopulation >= option.standalonePopulation - EPSILON));
+    return {
+      candidate,
+      options: nonDominated,
+      maxScore: Math.max(0, ...nonDominated.map((option) => option.standaloneScore)),
+      maxPopulation: Math.max(0, ...nonDominated.map((option) => option.standalonePopulation)),
+      minCost: Math.min(Infinity, ...nonDominated.map((option) => option.cost)),
+    };
+  }).filter((group) => group.options.length);
+
+  const groups = rawGroups;
+
+  const greedySeed = (preferGain = false) => {
+    const residual = initialDemand.slice();
+    const selected = new Set();
     const solution = [];
     let score = 0;
     let population = 0;
     let spent = 0;
-
     while (true) {
       let best = null;
       for (let groupIndex = 0; groupIndex < groups.length; groupIndex += 1) {
-        if (selectedGroupIndices.has(groupIndex)) continue;
+        if (selected.has(groupIndex)) continue;
         for (const option of groups[groupIndex].options) {
           if (spent + option.cost > budget) continue;
-          const gain = marginalGain(option, coverage);
-          if (gain.score <= EPSILON && gain.population <= EPSILON) continue;
+          const gain = evaluateOption(option, residual);
           const density = gain.score / option.cost;
-          const populationDensity = gain.population / option.cost;
-          const preferred = !best || (
-            strategy === "gain"
-              ? gain.score > best.gain.score + EPSILON
-                || (Math.abs(gain.score - best.gain.score) <= EPSILON && density > best.density)
-              : density > best.density + EPSILON
-                || (Math.abs(density - best.density) <= EPSILON && gain.score > best.gain.score)
-          ) || (
-            best
-            && Math.abs(gain.score - best.gain.score) <= EPSILON
-            && Math.abs(density - best.density) <= EPSILON
-            && populationDensity > best.populationDensity
-          );
-          if (preferred) {
-            best = { groupIndex, option, gain, density, populationDensity };
+          if (!best || (preferGain
+            ? gain.score > best.gain.score + EPSILON
+              || (Math.abs(gain.score - best.gain.score) <= EPSILON && density > best.density)
+            : density > best.density + EPSILON
+              || (Math.abs(density - best.density) <= EPSILON && gain.score > best.gain.score))) {
+            best = { groupIndex, option, gain, density };
           }
         }
       }
-      if (!best) break;
-      const change = applyOption(best.option, coverage);
+      if (!best || best.gain.score <= EPSILON) break;
+      const change = applyOption(best.option, residual);
+      selected.add(best.groupIndex);
+      solution.push({ ...best.option, groupIndex: best.groupIndex });
       score += change.score;
       population += change.population;
       spent += best.option.cost;
-      selectedGroupIndices.add(best.groupIndex);
-      solution.push(best.option);
     }
-
-    return { score, population, spent, solution };
+    const canonicalSolution = solution
+      .sort((a, b) => a.groupIndex - b.groupIndex)
+      .map(({ groupIndex: _groupIndex, ...option }) => option);
+    const canonicalResidual = initialDemand.slice();
+    let canonicalScore = 0;
+    let canonicalPopulation = 0;
+    for (const option of canonicalSolution) {
+      const result = applyOption(option, canonicalResidual);
+      canonicalScore += result.score;
+      canonicalPopulation += result.population;
+    }
+    return {
+      score: canonicalScore,
+      population: canonicalPopulation,
+      spent,
+      solution: canonicalSolution,
+    };
   };
 
-  const densitySeed = greedySeed("density");
-  const gainSeed = greedySeed("gain");
+  const densitySeed = greedySeed(false);
+  const gainSeed = greedySeed(true);
   let incumbent = isBetter(
     gainSeed.score,
     gainSeed.population,
@@ -267,81 +240,7 @@ export function solveExactOptimal({
   ) ? gainSeed : densitySeed;
   const initialObjective = incumbent.score;
 
-  const suffixCoverage = new Array(groups.length + 1);
-  suffixCoverage[groups.length] = new Float64Array(compactGridIndices.length);
-  for (let depth = groups.length - 1; depth >= 0; depth -= 1) {
-    const values = suffixCoverage[depth + 1].slice();
-    for (const option of groups[depth].options) {
-      for (let index = 0; index < option.indices.length; index += 1) {
-        const compactIndex = option.indices[index];
-        values[compactIndex] = Math.max(values[compactIndex], option.coverages[index]);
-      }
-    }
-    suffixCoverage[depth] = values;
-  }
-
-  const suffixMinimumCost = new Float64Array(groups.length + 1);
-  suffixMinimumCost[groups.length] = Number.POSITIVE_INFINITY;
-  for (let depth = groups.length - 1; depth >= 0; depth -= 1) {
-    suffixMinimumCost[depth] = Math.min(groups[depth].minCost, suffixMinimumCost[depth + 1]);
-  }
-
-  const budgetUnits = Math.floor(budget / COST_UNIT);
-  const suffixScoreBudget = new Array(groups.length + 1);
-  const suffixPopulationBudget = new Array(groups.length + 1);
-  suffixScoreBudget[groups.length] = new Float64Array(budgetUnits + 1);
-  suffixPopulationBudget[groups.length] = new Float64Array(budgetUnits + 1);
-  for (let depth = groups.length - 1; depth >= 0; depth -= 1) {
-    const nextScore = suffixScoreBudget[depth + 1];
-    const nextPopulation = suffixPopulationBudget[depth + 1];
-    const scoreValues = nextScore.slice();
-    const populationValues = nextPopulation.slice();
-    for (let available = 0; available <= budgetUnits; available += 1) {
-      for (const option of groups[depth].options) {
-        if (option.costUnits > available) continue;
-        scoreValues[available] = Math.max(
-          scoreValues[available],
-          option.standaloneScore + nextScore[available - option.costUnits],
-        );
-        populationValues[available] = Math.max(
-          populationValues[available],
-          option.standalonePopulation + nextPopulation[available - option.costUnits],
-        );
-      }
-    }
-    suffixScoreBudget[depth] = scoreValues;
-    suffixPopulationBudget[depth] = populationValues;
-  }
-
-  const coverageUpper = (depth, coverage) => {
-    const optimisticCoverage = suffixCoverage[depth];
-    let score = 0;
-    let population = 0;
-    for (let index = 0; index < coverage.length; index += 1) {
-      const value = Math.max(coverage[index], optimisticCoverage[index]);
-      score += Math.min(compactScores[index], scoreReduction * value);
-      population += compactPopulations[index] * value;
-    }
-    return { score, population };
-  };
-
-  const dynamicBudgetUpper = (depth, remainingBudget, coverage, score, population) => {
-    const scoreItems = [];
-    const populationItems = [];
-    for (let groupIndex = depth; groupIndex < groups.length; groupIndex += 1) {
-      const group = groups[groupIndex];
-      const envelopeOption = group.options[group.options.length - 1];
-      const gain = marginalGain(envelopeOption, coverage);
-      scoreItems.push({ value: gain.score, cost: group.minCost });
-      populationItems.push({ value: gain.population, cost: group.minCost });
-    }
-    return {
-      score: score + fractionalUpper(scoreItems, remainingBudget),
-      population: population + fractionalUpper(populationItems, remainingBudget),
-    };
-  };
-
-  const coverage = new Float64Array(compactGridIndices.length);
+  const residual = initialDemand.slice();
   const selection = [];
   let nodes = 0;
   let pruned = 0;
@@ -362,13 +261,21 @@ export function solveExactOptimal({
 
   const updateIncumbent = (score, population, spent) => {
     if (!isBetter(score, population, spent, incumbent)) return;
-    incumbent = {
-      score,
-      population,
-      spent,
-      solution: [...selection],
-    };
+    incumbent = { score, population, spent, solution: [...selection] };
     reportProgress(true);
+  };
+
+  const upperBound = (depth, remainingBudget, field) => {
+    const items = [];
+    for (let index = depth; index < groups.length; index += 1) {
+      for (const option of groups[index].options) {
+        items.push({
+          value: field === "score" ? option.standaloneScore : option.standalonePopulation,
+          cost: option.cost,
+        });
+      }
+    }
+    return fractionalUpper(items, remainingBudget);
   };
 
   const search = (depth, spent, score, population) => {
@@ -376,59 +283,32 @@ export function solveExactOptimal({
     if ((nodes & 2047) === 0) reportProgress();
     updateIncumbent(score, population, spent);
     if (depth >= groups.length) return;
-
     const remainingBudget = budget - spent;
-    if (remainingBudget < suffixMinimumCost[depth]) return;
-
-    const remainingUnits = Math.floor(remainingBudget / COST_UNIT);
-    const budgetBound = {
-      score: score + suffixScoreBudget[depth][remainingUnits],
-      population: population + suffixPopulationBudget[depth][remainingUnits],
-    };
-    if (budgetBound.score < incumbent.score - EPSILON) {
+    const scoreBound = score + upperBound(depth, remainingBudget, "score");
+    if (scoreBound < incumbent.score - EPSILON) {
       pruned += 1;
       return;
     }
-
-    const spatialBound = coverageUpper(depth, coverage);
-    let scoreBound = Math.min(budgetBound.score, spatialBound.score);
-    let populationBound = Math.min(budgetBound.population, spatialBound.population);
-
-    if (groups.length - depth <= DYNAMIC_BOUND_REMAINING) {
-      const dynamicBound = dynamicBudgetUpper(depth, remainingBudget, coverage, score, population);
-      scoreBound = Math.min(scoreBound, dynamicBound.score);
-      populationBound = Math.min(populationBound, dynamicBound.population);
+    if (scoreBound <= incumbent.score + EPSILON) {
+      const populationBound = population + upperBound(depth, remainingBudget, "population");
+      if (populationBound <= incumbent.population + EPSILON) {
+        pruned += 1;
+        return;
+      }
     }
 
-    if (
-      scoreBound < incumbent.score - EPSILON
-      || (
-        scoreBound <= incumbent.score + EPSILON
-        && populationBound <= incumbent.population + EPSILON
-      )
-    ) {
-      pruned += 1;
-      return;
-    }
-
-    const branchOptions = groups[depth].options
+    const group = groups[depth];
+    const branches = group.options
       .filter((option) => option.cost <= remainingBudget)
-      .map((option) => ({ option, gain: marginalGain(option, coverage) }))
+      .map((option) => ({ option, gain: evaluateOption(option, residual) }))
       .filter(({ gain }) => gain.score > EPSILON || gain.population > EPSILON)
-      .sort((a, b) => a.option.cost - b.option.cost)
-      .filter(({ option, gain }, index, options) => !options.slice(0, index).some((other) => (
-        other.option.cost <= option.cost
-        && other.gain.score >= gain.score - EPSILON
-        && other.gain.population >= gain.population - EPSILON
-      )))
-      .sort((a, b) => (
+      .sort((a, b) =>
         b.gain.score / b.option.cost - a.gain.score / a.option.cost
         || b.gain.score - a.gain.score
-        || b.gain.population - a.gain.population
-      ));
+        || b.gain.population - a.gain.population);
 
-    for (const { option } of branchOptions) {
-      const change = applyOption(option, coverage);
+    for (const { option } of branches) {
+      const change = applyOption(option, residual);
       selection.push(option);
       search(
         depth + 1,
@@ -437,9 +317,8 @@ export function solveExactOptimal({
         population + change.population,
       );
       selection.pop();
-      rollbackOption(change, coverage);
+      rollback(change, residual);
     }
-
     search(depth + 1, spent, score, population);
   };
 
@@ -448,11 +327,12 @@ export function solveExactOptimal({
   reportProgress(true);
 
   return {
-    solution: incumbent.solution.map(({ id, x, y, radius, cost }) => ({
+    solution: incumbent.solution.map(({ id, x, y, radius, capacity, cost }) => ({
       id,
       x,
       y,
       radius,
+      capacity,
       cost,
     })),
     stats: {
@@ -465,8 +345,8 @@ export function solveExactOptimal({
       pruned,
       candidateCount: groups.length,
       optionCount: groups.reduce((sum, group) => sum + group.options.length, 0),
-      affectedCellCount: compactGridIndices.length,
       elapsedMs: Math.round(performance.now() - startedAt),
+      allocationRule: "capacity-centre-outward-manhattan",
     },
   };
 }

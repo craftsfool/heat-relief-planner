@@ -53,11 +53,11 @@ export function LayerPanel({ layers, candidateCount, weights, enabled, activeLay
             </button>
           </header>
           <dl>
-            <div><dt>Demand</dt><dd>Heat, vulnerability and footfall raise priority.</dd></div>
-            <div><dt>Cooling</dt><dd>Nearby cooling facilities reduce priority.</dd></div>
-            <div><dt>Coverage</dt><dd>Only the strongest overlapping shelter applies; water is excluded.</dd></div>
+            <div><dt>Priority</dt><dd>Heat, senior population and footfall raise a cell's score.</dd></div>
+            <div><dt>Existing shelters</dt><dd>Mapped amenities consume nearby population demand before play starts.</dd></div>
+            <div><dt>Capacity</dt><dd>Each shelter serves the centre first, then successive Manhattan-distance rings.</dd></div>
           </dl>
-          <p>Priority = max(0, demand - cooling - up to 30 shelter points)</p>
+          <p>Game value = people served × local priority, with no duplicated demand.</p>
         </section>
       )}
 
@@ -121,7 +121,6 @@ export function LayerPanel({ layers, candidateCount, weights, enabled, activeLay
               <span className="layer-swatch" style={{ backgroundColor: layer.color }} />
               <div>
                 <strong>{layer.label}</strong>
-                {layer.direction < 0 && <small>Reduces score</small>}
               </div>
             </div>
             <div className="weight-control">
@@ -147,7 +146,7 @@ export function LayerPanel({ layers, candidateCount, weights, enabled, activeLay
         <span>Current weight sum</span>
         <strong>{weightTotal.toFixed(2)}</strong>
       </div>
-      <p className="data-quality-note">GIS-derived base map · modelled factor scores</p>
+      <p className="data-quality-note">Official population + HDB price proxy · modelled heat and flow</p>
     </aside>
   );
 }

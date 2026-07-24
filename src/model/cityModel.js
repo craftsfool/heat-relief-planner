@@ -5,8 +5,22 @@ export const GRID_ROWS = queenstownGrid.metadata.rows;
 export const CELL_SIZE_METRES = queenstownGrid.metadata.cellSizeMetres;
 export const MAP_METADATA = queenstownGrid.metadata;
 export const MAP_SUBZONES = queenstownGrid.subzones;
+export const MAP_EXISTING_SHELTERS = queenstownGrid.existingShelters ?? [];
 export const STATION_RADII = [100, 150, 200, 250, 300];
-export const SHELTER_SCORE_REDUCTION = 30;
+export const STATION_CAPACITY_BY_RADIUS = {
+  100: 500,
+  150: 1000,
+  200: 2000,
+  250: 3000,
+  300: 4500,
+};
+export const BASE_COST_BY_RADIUS = {
+  100: 180_000,
+  150: 240_000,
+  200: 320_000,
+  250: 410_000,
+  300: 510_000,
+};
 
 export const LAYER_DEFINITIONS = [
   {
@@ -14,7 +28,7 @@ export const LAYER_DEFINITIONS = [
     label: "Heat exposure",
     shortLabel: "Heat",
     color: "#f15b5a",
-    defaultWeight: 0.35,
+    defaultWeight: 0.4,
     direction: 1,
   },
   {
@@ -22,7 +36,7 @@ export const LAYER_DEFINITIONS = [
     label: "Vulnerable population",
     shortLabel: "Vulnerability",
     color: "#f2b544",
-    defaultWeight: 0.3,
+    defaultWeight: 0.35,
     direction: 1,
   },
   {
@@ -30,16 +44,8 @@ export const LAYER_DEFINITIONS = [
     label: "Pedestrian flow",
     shortLabel: "Footfall",
     color: "#41ad9e",
-    defaultWeight: 0.2,
+    defaultWeight: 0.25,
     direction: 1,
-  },
-  {
-    id: "cooling",
-    label: "Existing cooling facilities",
-    shortLabel: "Nearby facilities",
-    color: "#7890a4",
-    defaultWeight: 0.15,
-    direction: -1,
   },
 ];
 
@@ -51,7 +57,22 @@ const MIN_CANDIDATE_SPACING_CELLS = Math.max(2, Math.round(320 / CELL_SIZE_METRE
 
 const decodeCell = (packed) => {
   if (!Array.isArray(packed)) return packed;
-  const [x, y, lon, lat, subzoneIndex, flags, heat, vulnerable, flow, cooling] = packed;
+  const [
+    x,
+    y,
+    lon,
+    lat,
+    subzoneIndex,
+    flags,
+    heat,
+    vulnerable,
+    flow,
+    cooling,
+    population,
+    seniorPopulation,
+    housingPricePsm = 0,
+    housingCostIndex = 1,
+  ] = packed;
   const subzone = MAP_SUBZONES[subzoneIndex];
   return {
     id: `${x}-${y}`,
@@ -73,10 +94,24 @@ const decodeCell = (packed) => {
     vulnerable,
     flow,
     cooling,
+    population,
+    seniorPopulation,
+    housingPricePsm,
+    housingCostIndex,
   };
 };
 
-const baseCells = queenstownGrid.cells.map(decodeCell);
+const decodedCells = queenstownGrid.cells.map(decodeCell);
+const maxSeniorPopulation = Math.max(
+  1,
+  ...decodedCells.map((cell) => cell.seniorPopulation ?? 0),
+);
+const baseCells = decodedCells.map((cell) => ({
+  ...cell,
+  vulnerable: Number.isFinite(cell.seniorPopulation)
+    ? clamp(Math.sqrt(cell.seniorPopulation / maxSeniorPopulation))
+    : cell.vulnerable,
+}));
 
 const distanceToCellArea = (a, b) =>
   Math.max(0, Math.hypot(a.x - b.x, a.y - b.y) - CELL_HALF_DIAGONAL);
@@ -106,62 +141,158 @@ export function buildCity(time = "afternoon", scenario = "baseline") {
   });
 }
 
-export function getStationCoverage(cell, placedStations = []) {
-  if (!cell || cell.outside || cell.water || !placedStations.length) return 0;
-
-  return Math.max(
-    ...placedStations.map((station) => {
-      const radiusInCells = (station.radius ?? 150) / CELL_SIZE_METRES;
-      const distance = distanceToCellArea(station, cell);
-      if (distance > radiusInCells) return 0;
-      return clamp(1 - distance / radiusInCells);
-    }),
-  );
-}
-
-export function scoreCell(cell, weights, enabledLayers, placedStations = []) {
+export function scoreCell(cell, weights, enabledLayers) {
   if (cell.outside) return 0;
-
-  const stationCoverage = getStationCoverage(cell, placedStations);
   const positiveWeight = LAYER_DEFINITIONS.filter(
-    (layer) => layer.direction > 0 && enabledLayers[layer.id],
+    (layer) => enabledLayers[layer.id],
   ).reduce((sum, layer) => sum + weights[layer.id], 0);
-
-  if (!positiveWeight) {
-    const coolingOnlyScore = enabledLayers.cooling ? -cell.cooling * 100 : 0;
-    if (coolingOnlyScore <= 0) return Math.round(clamp(coolingOnlyScore, -100, 100));
-    return Math.round(Math.max(0, coolingOnlyScore - SHELTER_SCORE_REDUCTION * stationCoverage));
-  }
+  if (!positiveWeight) return 0;
 
   const positive = LAYER_DEFINITIONS.filter(
-    (layer) => layer.direction > 0 && enabledLayers[layer.id],
+    (layer) => enabledLayers[layer.id],
   ).reduce((sum, layer) => sum + cell[layer.id] * weights[layer.id], 0);
+  return Math.round(clamp(positive / positiveWeight) * 100);
+}
 
-  const coolingPenalty = enabledLayers.cooling
-    ? cell.cooling * weights.cooling * 0.7
-    : 0;
+const demandBaselineCache = new WeakMap();
+const ringOffsetCache = new Map();
 
-  const baseScore = clamp(
-    (positive / positiveWeight - coolingPenalty) * 100,
-    -100,
-    100,
-  );
+const getRingOffsets = (radius) => {
+  if (ringOffsetCache.has(radius)) return ringOffsetCache.get(radius);
+  const radiusInCells = Math.max(0, Math.floor(radius / CELL_SIZE_METRES));
+  const rings = Array.from({ length: radiusInCells + 1 }, () => []);
+  for (let offsetY = -radiusInCells; offsetY <= radiusInCells; offsetY += 1) {
+    for (let offsetX = -radiusInCells; offsetX <= radiusInCells; offsetX += 1) {
+      const ring = Math.abs(offsetX) + Math.abs(offsetY);
+      if (ring <= radiusInCells) rings[ring].push({ x: offsetX, y: offsetY });
+    }
+  }
+  ringOffsetCache.set(radius, rings);
+  return rings;
+};
 
-  if (baseScore <= 0) return Math.round(baseScore);
-  return Math.round(Math.max(0, baseScore - SHELTER_SCORE_REDUCTION * stationCoverage));
+const stationCapacity = (station) =>
+  station.capacity ?? STATION_CAPACITY_BY_RADIUS[station.radius] ?? 0;
+
+const applyShelterToDemand = (residual, available, shelter) => {
+  let remainingCapacity = stationCapacity(shelter);
+  let served = 0;
+  const servedByCell = [];
+  if (remainingCapacity <= 0) return { served, servedByCell };
+
+  for (const ring of getRingOffsets(shelter.radius ?? 100)) {
+    const demandCells = [];
+    let ringDemand = 0;
+    for (const offset of ring) {
+      const x = shelter.x + offset.x;
+      const y = shelter.y + offset.y;
+      if (x < 0 || x >= GRID_COLS || y < 0 || y >= GRID_ROWS) continue;
+      const index = y * GRID_COLS + x;
+      if (!available[index] || residual[index] <= 0) continue;
+      demandCells.push({ index, demand: residual[index] });
+      ringDemand += residual[index];
+    }
+    if (ringDemand <= 0) continue;
+    const ringServed = Math.min(remainingCapacity, ringDemand);
+    const ratio = ringServed / ringDemand;
+    for (const item of demandCells) {
+      const amount = item.demand * ratio;
+      residual[item.index] = Math.max(0, residual[item.index] - amount);
+      servedByCell.push({ index: item.index, amount });
+    }
+    served += ringServed;
+    remainingCapacity -= ringServed;
+    if (remainingCapacity <= 1e-6) break;
+  }
+  return { served, servedByCell };
+};
+
+const createBaselineDemand = (cells) => {
+  const available = new Uint8Array(GRID_COLS * GRID_ROWS);
+  const initial = new Float64Array(GRID_COLS * GRID_ROWS);
+  const residual = new Float64Array(GRID_COLS * GRID_ROWS);
+  let totalPopulation = 0;
+  for (const cell of cells) {
+    if (cell.outside || cell.water) continue;
+    const index = cell.y * GRID_COLS + cell.x;
+    const population = Math.max(0, estimateCellPopulation(cell));
+    available[index] = 1;
+    initial[index] = population;
+    residual[index] = population;
+    totalPopulation += population;
+  }
+
+  let servedByExisting = 0;
+  for (const shelter of MAP_EXISTING_SHELTERS) {
+    servedByExisting += applyShelterToDemand(residual, available, shelter).served;
+  }
+  return {
+    available,
+    initial,
+    afterExisting: residual,
+    totalPopulation,
+    servedByExisting,
+  };
+};
+
+const baselineDemandFor = (cells) => {
+  let baseline = demandBaselineCache.get(cells);
+  if (!baseline) {
+    baseline = createBaselineDemand(cells);
+    demandBaselineCache.set(cells, baseline);
+  }
+  return baseline;
+};
+
+export function getDemandState(cells, placedStations = []) {
+  const baseline = baselineDemandFor(cells);
+  const residual = baseline.afterExisting.slice();
+  const servedByCell = new Float64Array(GRID_COLS * GRID_ROWS);
+  const perStation = new Map();
+  let servedByPlaced = 0;
+  for (const station of placedStations) {
+    const result = applyShelterToDemand(residual, baseline.available, station);
+    servedByPlaced += result.served;
+    perStation.set(station.id, result.served);
+    for (const item of result.servedByCell) servedByCell[item.index] += item.amount;
+  }
+  return {
+    ...baseline,
+    residual,
+    servedByCell,
+    servedByPlaced,
+    perStation,
+    remainingDemand: residual.reduce((sum, value) => sum + value, 0),
+  };
+}
+
+export function getCellDemand(cell, demandState) {
+  if (!cell || !demandState) return { initial: 0, afterExisting: 0, remaining: 0, servedByPlayer: 0 };
+  const index = cell.y * GRID_COLS + cell.x;
+  return {
+    initial: demandState.initial[index] ?? 0,
+    afterExisting: demandState.afterExisting[index] ?? 0,
+    remaining: demandState.residual[index] ?? 0,
+    servedByPlayer: demandState.servedByCell[index] ?? 0,
+  };
+}
+
+export function getDemandAdjustedScore(cell, demandState, weights, enabledLayers) {
+  const baseScore = scoreCell(cell, weights, enabledLayers);
+  const demand = getCellDemand(cell, demandState);
+  if (demand.afterExisting <= 0) return 0;
+  return Math.round(baseScore * clamp(demand.remaining / demand.afterExisting));
 }
 
 export function getPriorityReduction(cells, placedStations, weights, enabledLayers) {
   if (!placedStations.length) return 0;
-  const reduction = cells.reduce((sum, cell) => {
-    if (cell.outside || cell.water) return sum;
-    const baseScore = Math.max(0, scoreCell(cell, weights, enabledLayers));
-    if (!baseScore) return sum;
-    return sum + Math.min(
-      baseScore,
-      SHELTER_SCORE_REDUCTION * getStationCoverage(cell, placedStations),
-    );
-  }, 0);
+  const state = getDemandState(cells, placedStations);
+  let reduction = 0;
+  for (const cell of cells) {
+    if (cell.outside || cell.water) continue;
+    const index = cell.y * GRID_COLS + cell.x;
+    reduction += state.servedByCell[index] * scoreCell(cell, weights, enabledLayers) / 100;
+  }
   return Math.round(reduction);
 }
 
@@ -212,22 +343,24 @@ export function rankChallengeSites(cells, siteIds, weights, enabledLayers) {
 
 export function estimateCellPopulation(cell) {
   if (!cell || cell.outside || cell.water) return 0;
+  if (Number.isFinite(cell.population)) return cell.population;
   const densityIndex = 0.68 * cell.vulnerable + 0.32 * cell.flow;
   return (35 + densityIndex * 720) * POPULATION_AREA_SCALE;
 }
 
 export function getPopulationReached(cells, placedStations = []) {
   if (!placedStations.length) return 0;
-  return Math.round(
-    cells.reduce(
-      (sum, cell) => sum + estimateCellPopulation(cell) * getStationCoverage(cell, placedStations),
-      0,
-    ),
-  );
+  return Math.round(getDemandState(cells, placedStations).servedByPlaced);
 }
 
-export function getCellMetrics(cell, radius, cells) {
-  if (!cell) return { cost: 0, protectedHours: 0, coveredCells: 0, peopleReached: 0 };
+export function getCellMetrics(cell, radius, cells, placedStations = []) {
+  if (!cell) return {
+    cost: 0,
+    capacity: 0,
+    protectedHours: 0,
+    coveredCells: 0,
+    peopleReached: 0,
+  };
   const radiusInCells = radius / CELL_SIZE_METRES;
   const covered = cells.filter(
     (other) =>
@@ -240,14 +373,28 @@ export function getCellMetrics(cell, radius, cells) {
       sum + other.heat * (0.58 * other.vulnerable + 0.42 * other.flow),
     0,
   );
-  const landFactor = 0.45 + 0.55 * cell.flow;
-  const cost = Math.round((160000 + radius * 650 + landFactor * 85000) / 1000) * 1000;
+  const housingCostIndex = Number.isFinite(cell.housingCostIndex) && cell.housingCostIndex > 0
+    ? cell.housingCostIndex
+    : 1;
+  const cost = Math.round((BASE_COST_BY_RADIUS[radius] * housingCostIndex) / 1000) * 1000;
+  const capacity = STATION_CAPACITY_BY_RADIUS[radius];
+  const proposed = {
+    id: cell.id,
+    x: cell.x,
+    y: cell.y,
+    radius,
+    capacity,
+    cost,
+  };
+  const before = getDemandState(cells, placedStations).servedByPlaced;
+  const after = getDemandState(cells, [...placedStations, proposed]).servedByPlaced;
 
   return {
     cost,
+    capacity,
     protectedHours: Math.round(demand * 240),
     coveredCells: covered.length,
-    peopleReached: getPopulationReached(cells, [{ ...cell, radius }]),
+    peopleReached: Math.round(Math.max(0, after - before)),
   };
 }
 
@@ -263,7 +410,14 @@ export function generateRandomSolution(candidateCells, cells, budget, random = M
     if (!affordableRadii.length) return false;
     const radius = affordableRadii[Math.floor(random() * affordableRadii.length)];
     const { cost } = getCellMetrics(cell, radius, cells);
-    solution.push({ id: cell.id, x: cell.x, y: cell.y, radius, cost });
+    solution.push({
+      id: cell.id,
+      x: cell.x,
+      y: cell.y,
+      radius,
+      capacity: STATION_CAPACITY_BY_RADIUS[radius],
+      cost,
+    });
     remainingBudget -= cost;
     return true;
   };

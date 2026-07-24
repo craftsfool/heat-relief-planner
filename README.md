@@ -2,24 +2,29 @@
 
 Long-pressing **New game** traverses every buildable cell and all five shelter
 radii on the current map. It builds a full-map greedy/local-search plan, then
-runs exact branch-and-bound refinement over the strongest locations discovered
-during traversal. The objective is lexicographic: maximize effective
-composite-priority reduction, then population reached, then minimize cost.
+runs capacity-aware branch-and-bound refinement over the strongest locations
+discovered during traversal. The objective is lexicographic: maximize
+population-weighted priority reduction, then population served, then minimize
+cost.
 
 An interactive pixel-grid planning tool for exploring heat-relief station placement in Queenstown, Singapore.
 
-The base grid uses the URA Master Plan 2019 planning-area boundary and OpenStreetMap features. Heat exposure, vulnerable population, pedestrian flow, and cooling-facility values are modelling proxies for project exploration rather than official measurements.
+The base grid uses the URA Master Plan 2019 planning-area boundary and OpenStreetMap features. Population is allocated from official Census 2020 MP2019-subzone totals, and housing cost is interpolated from recent official HDB resale transactions. Heat exposure and pedestrian flow remain modelling proxies.
 
 ## Features
 
 - 370 x 353 GIS-derived grid with 20 m cells and subzone views
 - Composite and single-factor map views
 - Zoom, pan, and responsive mobile layout
-- Budget-based station placement scored by priority reduction on accessible land
+- Budget-based station placement scored by population-weighted priority reduction
+- 383 mapped existing cooling facilities, including convenience stores, supermarkets, cafes, libraries, community facilities, and malls
+- Capacity-constrained service allocation from the centre cell through successive Manhattan-distance rings
+- Residual population demand that cannot be served twice by overlapping shelters
+- Cell-specific construction costs based on the local HDB resale-price index
 - Greedy construction with local-search improvements for optimized strategies
 - Replayable greedy-decision animation with compact parameters, score-labelled close-ups, and map-overview intervals
 - Automatic map demo recording with a scored six-layer map tour, synchronized decision parameters, optional intro-free export, and shelter-selection audio cues
-- Marginal shelter effects that do not stack below a cell score of zero
+- Existing shelters reduce population demand before player construction begins
 - Candidate ranking and site-level score breakdowns
 
 ## Run locally
@@ -35,7 +40,28 @@ Create a production build with:
 npm run build
 ```
 
+Refresh the socioeconomic grid fields with:
+
+```bash
+npm run generate:socioeconomic
+```
+
+Refresh existing shelter amenities with:
+
+```bash
+npm run generate:facilities
+```
+
+The generated cell fields are `population`, `seniorPopulation`,
+`housingPricePsm`, and `housingCostIndex`. Population is conserved within each
+subzone. HDB prices are a local cost-pressure proxy, not a land valuation.
+
 ## Data attribution
 
 - Planning boundary: Singapore Urban Redevelopment Authority, Master Plan 2019 Planning Area Boundary (No Sea)
 - Map features: OpenStreetMap contributors, available under the Open Database License
+- Population: Singapore Department of Statistics, Census of Population 2020, MP2019 subzones
+- Housing: Housing & Development Board resale transactions, geocoded with Singapore Land Authority OneMap
+
+Amenity capacities are modelling assumptions by facility type and are not
+official occupancy limits.

@@ -20,7 +20,13 @@ const loadJson = async (filePath, url, options) => {
   if (filePath) return JSON.parse(fs.readFileSync(filePath, "utf8"));
   const response = await fetch(url, options);
   if (!response.ok) throw new Error(`Unable to fetch ${url}: ${response.status}`);
-  return response.json();
+  const data = await response.json();
+  if (data?.data?.url) {
+    const download = await fetch(data.data.url);
+    if (!download.ok) throw new Error(`Unable to download dataset from ${data.data.url}: ${download.status}`);
+    return download.json();
+  }
+  return data;
 };
 
 const subzonesCollection = await loadJson(
@@ -37,7 +43,7 @@ nwr["landuse"~"forest|grass|meadow|recreation_ground|cemetery|construction"](${o
 nwr["natural"~"wood|wetland|scrub"](${osmBbox});
 nwr["railway"~"station|halt|tram_stop"](${osmBbox});
 nwr["public_transport"="station"](${osmBbox});
-nwr["shop"="mall"](${osmBbox});
+nwr["shop"~"mall|supermarket|convenience"](${osmBbox});
 nwr["amenity"~"cafe|food_court|community_centre|library|drinking_water|shelter"](${osmBbox});
 );out geom;`;
 const osm = await loadJson(
@@ -230,8 +236,12 @@ const facilities = [];
 const transitStations = [];
 const facilityKind = (tags) => {
   if (tags.shop === "mall") return "mall";
-  if (["cafe", "food_court"].includes(tags.amenity)) return "cafe";
-  if (["community_centre", "library"].includes(tags.amenity)) return "community";
+  if (tags.shop === "supermarket") return "supermarket";
+  if (tags.shop === "convenience") return "convenience";
+  if (tags.amenity === "cafe") return "cafe";
+  if (tags.amenity === "food_court") return "food_court";
+  if (tags.amenity === "community_centre") return "community";
+  if (tags.amenity === "library") return "library";
   if (tags.amenity === "drinking_water") return "water";
   if (tags.amenity === "shelter") return "shelter";
   return null;
@@ -246,7 +256,15 @@ for (const element of osm.elements) {
   if (!cell) continue;
   const kind = facilityKind(tags);
   if (kind) {
-    const facility = { x, y, kind, label: tags.name ?? kind };
+    const facility = {
+      osmId: `${element.type}/${element.id}`,
+      x,
+      y,
+      lon: Number(coordinates[0].toFixed(6)),
+      lat: Number(coordinates[1].toFixed(6)),
+      kind,
+      label: tags.name ?? kind.replaceAll("_", " "),
+    };
     facilities.push(facility);
     cell.facility = true;
   }
@@ -257,6 +275,58 @@ for (const element of osm.elements) {
     }
   }
 }
+
+const facilityService = {
+  convenience: { capacity: 25, radius: 100 },
+  cafe: { capacity: 30, radius: 100 },
+  water: { capacity: 15, radius: 80 },
+  shelter: { capacity: 30, radius: 100 },
+  supermarket: { capacity: 80, radius: 120 },
+  food_court: { capacity: 120, radius: 150 },
+  library: { capacity: 120, radius: 150 },
+  community: { capacity: 180, radius: 150 },
+  mall: { capacity: 400, radius: 200 },
+};
+const uniqueFacilities = new Map();
+for (const facility of facilities) {
+  const key = `${facility.x}-${facility.y}:${facility.kind}:${facility.label.toLowerCase()}`;
+  if (!uniqueFacilities.has(key)) uniqueFacilities.set(key, facility);
+}
+const existingSheltersByCell = new Map();
+for (const facility of uniqueFacilities.values()) {
+  const service = facilityService[facility.kind];
+  const key = `${facility.x}-${facility.y}`;
+  const current = existingSheltersByCell.get(key) ?? {
+    id: `existing-${key}`,
+    x: facility.x,
+    y: facility.y,
+    lon: facility.lon,
+    lat: facility.lat,
+    kind: facility.kind,
+    label: facility.label,
+    capacity: 0,
+    radius: 0,
+    facilityCount: 0,
+    osmIds: [],
+  };
+  current.capacity += service.capacity;
+  current.radius = Math.max(current.radius, service.radius);
+  current.facilityCount += 1;
+  current.osmIds.push(facility.osmId);
+  if (service.capacity > facilityService[current.kind].capacity) {
+    current.kind = facility.kind;
+    current.label = facility.label;
+  }
+  existingSheltersByCell.set(key, current);
+}
+const existingShelters = [...existingSheltersByCell.values()]
+  .map((shelter) => ({
+    ...shelter,
+    label: shelter.facilityCount > 1
+      ? `${shelter.label} + ${shelter.facilityCount - 1} nearby`
+      : shelter.label,
+  }))
+  .sort((a, b) => a.y - b.y || a.x - b.x || a.id.localeCompare(b.id));
 
 const spreadInfluence = (locations, spreadMetres, apply) => {
   const reach = Math.ceil((spreadMetres * 3) / cellSizeMetres);
@@ -349,10 +419,14 @@ const output = {
       subzones: subzones.length, insideCells: cells.length,
       buildableCells: cells.filter((cell) => cell.buildable).length,
       buildings, waterFeatures, greenFeatures, roadFeatures,
-      facilities: facilities.length, transitStations: transitStations.length,
+      facilities: uniqueFacilities.size,
+      existingShelterCells: existingShelters.length,
+      existingShelterCapacity: existingShelters.reduce((sum, shelter) => sum + shelter.capacity, 0),
+      transitStations: transitStations.length,
     },
   },
   subzones,
+  existingShelters,
   cells: packedCells,
 };
 

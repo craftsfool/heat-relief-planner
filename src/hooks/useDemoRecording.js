@@ -97,15 +97,17 @@ const drawRecordingFrame = (context, width, height, sourceCanvas, transform, dat
   if (data.currentStep && ["focus", "applied"].includes(data.phase)) {
     const step = data.currentStep;
     const panelWidth = Math.min(300, width - 24);
-    const panelHeight = 136;
+    const panelHeight = 180;
     const panelX = width - panelWidth - 12;
     const panelY = 12;
     const rightX = panelX + panelWidth - 10;
     const phaseLabel = data.phase === "applied" ? "SCORES RECALCULATED" : "BEFORE PLACEMENT";
     const rows = [
       ["Marginal reduction", `+${step.marginalGain.toLocaleString()} pts`],
+      ["People served", `+${step.peopleServed.toLocaleString()}`],
       ["Efficiency", `${step.efficiency.toLocaleString()} pts / $100k`],
-      ["Radius · Cost", `${step.station.radius} m · $${step.station.cost.toLocaleString()}`],
+      ["Radius · Capacity", `${step.station.radius} m · ${step.station.capacity.toLocaleString()}`],
+      ["Cost", `$${step.station.cost.toLocaleString()}`],
       ["Options · Budget left", `${step.evaluatedOptions.toLocaleString()} · $${step.remainingBudget.toLocaleString()}`],
     ];
 

@@ -1,12 +1,19 @@
 import {
   ArrowLeft,
+  BookOpen,
+  Building2,
   Check,
+  Coffee,
   Download,
   LoaderCircle,
   Maximize2,
   Play,
+  ShoppingBasket,
+  Store,
   Trash2,
+  Utensils,
   Video,
+  Waves,
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
@@ -16,12 +23,13 @@ import { toPng } from "html-to-image";
 import { GreedyDemoPanel } from "./GreedyDemoPanel";
 import { useDemoRecording } from "../hooks/useDemoRecording";
 import {
-  getStationCoverage,
+  getCellDemand,
+  getDemandAdjustedScore,
   GRID_COLS,
   GRID_ROWS,
+  MAP_EXISTING_SHELTERS,
   MAP_METADATA,
   MAP_SUBZONES,
-  scoreCell,
 } from "../model/cityModel";
 
 const BASE_COLORS = {
@@ -45,9 +53,21 @@ const DEMO_INTRO_VIEWS = [
   { mode: "single", layer: "heat", label: "Heat exposure" },
   { mode: "single", layer: "vulnerable", label: "Vulnerable population" },
   { mode: "single", layer: "flow", label: "Pedestrian flow" },
-  { mode: "single", layer: "cooling", label: "Existing cooling facilities" },
   { mode: "composite", layer: "heat", label: "Composite" },
 ];
+
+const FACILITY_ICONS = {
+  convenience: Store,
+  supermarket: ShoppingBasket,
+  mall: Building2,
+  cafe: Coffee,
+  food_court: Utensils,
+  library: BookOpen,
+  community: Building2,
+  water: Waves,
+  shelter: Building2,
+};
+const OVERVIEW_FACILITY_KINDS = new Set(["mall", "supermarket", "community", "library"]);
 
 const hexToRgb = (hex) => {
   const value = Number.parseInt(hex.slice(1), 16);
@@ -81,6 +101,7 @@ export function MapCanvas({
   selected,
   hovered,
   placed,
+  demandState,
   activeSubzoneCode,
   greedyDemo,
   onSubzone,
@@ -176,6 +197,11 @@ export function MapCanvas({
       : candidates,
     [activeSubzone, candidates],
   );
+  const visibleExistingShelters = useMemo(
+    () => MAP_EXISTING_SHELTERS.filter((shelter) =>
+      viewCellByCoordinate.has(`${shelter.x}-${shelter.y}`)),
+    [viewCellByCoordinate],
+  );
   const candidateIndex = useMemo(
     () => new Map(candidates.map((candidate, index) => [candidate.id, index + 1])),
     [candidates],
@@ -223,7 +249,7 @@ export function MapCanvas({
     ? hovered
     : null;
   const hoveredScore = hoveredInView
-    ? scoreCell(hoveredInView, weights, enabled, placed)
+    ? getDemandAdjustedScore(hoveredInView, demandState, weights, enabled)
     : 0;
   const hoveredSubzoneBoundaryPath = useMemo(() => {
     if (activeSubzone || !hoveredSubzoneCode) return "";
@@ -384,7 +410,7 @@ export function MapCanvas({
 
   useLayoutEffect(() => {
     syncMapOverlay();
-  }, [mapSurfaceSize, activeSubzoneCode, hoveredInView, hoveredSubzoneCode, scoreCells, visibleCandidates]);
+  }, [mapSurfaceSize, activeSubzoneCode, hoveredInView, hoveredSubzoneCode, isCellDetail, scoreCells, visibleCandidates, visibleExistingShelters]);
 
   useEffect(() => {
     if (greedyDemo.phase !== "intro") {
@@ -596,7 +622,10 @@ export function MapCanvas({
 
     for (const cell of viewCells) {
       let color = getBaseColor(cell);
-      const stationCoverage = cell.water || cell.outside ? 0 : getStationCoverage(cell, placed);
+      const demand = getCellDemand(cell, demandState);
+      const demandRatio = demand.initial > 0
+        ? Math.min(1, demand.remaining / demand.initial)
+        : 1;
 
       for (const layer of visibleLayers) {
         if (!enabled[layer.id]) continue;
@@ -610,11 +639,11 @@ export function MapCanvas({
                   (0.55 + 0.45 * (weights[layer.id] / maxCompositeWeight)),
               )
             : 0;
-        color = blend(color, hexToRgb(layer.color), opacity * (1 - stationCoverage * 0.84));
+        color = blend(color, hexToRgb(layer.color), opacity);
       }
 
-      if (stationCoverage > 0) {
-        color = blend(color, [244, 255, 249], stationCoverage * 0.72);
+      if (demandRatio < 1) {
+        color = blend(color, [244, 255, 249], (1 - demandRatio) * 0.78);
       }
 
       const localX = cell.x - viewBounds.minX;
@@ -627,7 +656,7 @@ export function MapCanvas({
     }
 
     context.putImageData(image, 0, 0);
-  }, [enabled, layers, placed, renderedActiveLayer, renderedMode, viewBounds.minX, viewBounds.minY, viewCells, viewColumns, viewRows, weights]);
+  }, [demandState, enabled, layers, renderedActiveLayer, renderedMode, viewBounds.minX, viewBounds.minY, viewCells, viewColumns, viewRows, weights]);
 
   const cellFromPointer = (event) => {
     const bounds = event.currentTarget.getBoundingClientRect();
@@ -775,7 +804,9 @@ export function MapCanvas({
                   </button>
                 )}
                 <strong>{activeSubzone?.name ?? "Queenstown"}</strong>
-                <span>{MAP_METADATA.cellSizeMetres} m grid · {viewCells.length.toLocaleString()} visible cells · {visibleCandidates.length} candidate sites</span>
+                <span>
+                  {MAP_METADATA.cellSizeMetres} m grid · {viewCells.length.toLocaleString()} cells · {visibleExistingShelters.length} existing shelters · {visibleCandidates.length} candidates
+                </span>
               </div>
 
               <TransformComponent wrapperClass="map-transform-wrapper" contentClass="map-transform-content">
@@ -826,7 +857,7 @@ export function MapCanvas({
                   {scoreCells.map((cell) => {
                     const score = cell.water || cell.outside
                       ? 0
-                      : scoreCell(cell, weights, enabled, placed);
+                      : getDemandAdjustedScore(cell, demandState, weights, enabled);
                     const isDemoTarget = currentGreedyStep?.station.id === cell.id;
                     return (
                       <span
@@ -863,6 +894,26 @@ export function MapCanvas({
                       {subzone.name}
                     </button>
                   ))}
+
+                  {visibleExistingShelters
+                    .filter((shelter) =>
+                      isCellDetail || activeSubzone || OVERVIEW_FACILITY_KINDS.has(shelter.kind))
+                    .map((shelter) => {
+                      const FacilityIcon = FACILITY_ICONS[shelter.kind] ?? Store;
+                      return (
+                        <span
+                          className={`existing-shelter-marker kind-${shelter.kind}`}
+                          key={shelter.id}
+                          data-map-x={shelter.x}
+                          data-map-y={shelter.y}
+                          title={`${shelter.label} · existing capacity ${shelter.capacity.toLocaleString()}`}
+                          aria-label={`${shelter.label}, existing shelter capacity ${shelter.capacity}`}
+                          role="img"
+                        >
+                          <FacilityIcon aria-hidden="true" />
+                        </span>
+                      );
+                    })}
 
                   {visibleCandidates.map((candidate) => {
                     const rank = candidateIndex.get(candidate.id);
@@ -922,7 +973,10 @@ export function MapCanvas({
             <strong>{hoveredInView.zone}</strong>
             <span>Cell {hoveredInView.x + 1}, {hoveredInView.y + 1} · {hoveredInView.buildable ? "Buildable" : "Unavailable"}</span>
             <small>
-              H {Math.round(hoveredInView.heat * 100)} · V {Math.round(hoveredInView.vulnerable * 100)} · F {Math.round(hoveredInView.flow * 100)} · C {Math.round(hoveredInView.cooling * 100)}
+              H {Math.round(hoveredInView.heat * 100)} · V {Math.round(hoveredInView.vulnerable * 100)} · F {Math.round(hoveredInView.flow * 100)}
+            </small>
+            <small>
+              Demand {Math.round(getCellDemand(hoveredInView, demandState).remaining).toLocaleString()} / {Math.round(getCellDemand(hoveredInView, demandState).initial).toLocaleString()}
             </small>
           </div>
         )}

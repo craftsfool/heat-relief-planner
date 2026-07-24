@@ -1,8 +1,10 @@
 import {
   GRID_COLS,
   GRID_ROWS,
-  SHELTER_SCORE_REDUCTION,
+  BASE_COST_BY_RADIUS,
   STATION_RADII,
+  STATION_CAPACITY_BY_RADIUS,
+  getDemandState,
   scoreCell,
 } from "./cityModel";
 
@@ -61,15 +63,17 @@ export function generateGreedyLocalSolution(
     id: cell.id,
     x: cell.x,
     y: cell.y,
-    flow: cell.flow,
+    housingCostIndex: cell.housingCostIndex,
     score: Math.max(0, scoreCell(cell, weights, enabledLayers)),
   }));
+  const baselineDemand = getDemandState(cells);
   const demandCells = cells
     .filter((cell) => !cell.outside && !cell.water)
     .map((cell) => ({
       x: cell.x,
       y: cell.y,
       score: Math.max(0, scoreCell(cell, weights, enabledLayers)),
+      population: baselineDemand.residual[cell.y * GRID_COLS + cell.x],
     }));
 
   return new Promise((resolve, reject) => {
@@ -88,7 +92,8 @@ export function generateGreedyLocalSolution(
       columns: GRID_COLS,
       rows: GRID_ROWS,
       radii: STATION_RADII,
-      scoreReduction: SHELTER_SCORE_REDUCTION,
+      capacities: STATION_CAPACITY_BY_RADIUS,
+      baseCosts: BASE_COST_BY_RADIUS,
       includeTrace,
       greedyOnly,
       fullTraversal,

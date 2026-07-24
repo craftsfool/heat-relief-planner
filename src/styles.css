@@ -463,6 +463,33 @@ button { color: inherit; }
   stroke-linejoin: round;
   filter: drop-shadow(0 0 1px #fff) drop-shadow(0 0 4px rgba(22, 119, 232, .95));
 }
+.existing-shelter-marker {
+  width: clamp(9px, calc(var(--screen-cell-size) * .72), 24px);
+  height: clamp(9px, calc(var(--screen-cell-size) * .72), 24px);
+  position: absolute;
+  z-index: 15;
+  transform: translate(-50%, -50%);
+  display: grid;
+  place-items: center;
+  color: #fff;
+  background: #0f806d;
+  border: 1px solid rgba(255, 255, 255, .94);
+  border-radius: 50%;
+  box-shadow: 0 1px 4px rgba(9, 64, 55, .45);
+  pointer-events: auto;
+}
+.existing-shelter-marker svg {
+  width: 62%;
+  height: 62%;
+  stroke-width: 2.4;
+}
+.existing-shelter-marker.kind-cafe,
+.existing-shelter-marker.kind-food_court { background: #a35a12; }
+.existing-shelter-marker.kind-library,
+.existing-shelter-marker.kind-community { background: #6b4fa0; }
+.existing-shelter-marker.kind-water { background: #2377a8; }
+.existing-shelter-marker.kind-mall,
+.existing-shelter-marker.kind-supermarket { background: #126c82; }
 .map-site-marker {
   width: var(--screen-beacon-size);
   height: var(--screen-beacon-size);

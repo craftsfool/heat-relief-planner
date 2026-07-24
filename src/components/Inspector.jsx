@@ -1,4 +1,4 @@
-import { Check, CircleDollarSign, Info, MapPin, Minus, Plus, Trash2, TrendingDown } from "lucide-react";
+import { Check, CircleDollarSign, Info, MapPin, Minus, Plus, Trash2, TrendingDown, Users } from "lucide-react";
 
 export function Inspector({
   cell,
@@ -6,8 +6,7 @@ export function Inspector({
   weights,
   enabled,
   score,
-  serviceReduction,
-  stationCoverage,
+  demand,
   radius,
   metrics,
   budget,
@@ -30,10 +29,6 @@ export function Inspector({
     );
   }
 
-  const hasPositiveLayer = layers.some(
-    (layer) => layer.direction > 0 && enabled[layer.id],
-  );
-
   return (
     <aside className="inspector" aria-label="Selected site details">
       <div className="candidate-heading">
@@ -50,6 +45,8 @@ export function Inspector({
         <div><dt>Grid cell</dt><dd>{cell.x + 1}, {cell.y + 1}</dd></div>
         <div><dt>Zone</dt><dd>{cell.zone}</dd></div>
         <div><dt>Coordinates</dt><dd>{cell.lat.toFixed(4)}, {cell.lon.toFixed(4)}</dd></div>
+        <div><dt>Population demand</dt><dd>{Math.round(demand.remaining).toLocaleString()} / {Math.round(demand.initial).toLocaleString()}</dd></div>
+        <div><dt>Housing price proxy</dt><dd>${cell.housingPricePsm.toLocaleString()} / m²</dd></div>
       </dl>
 
       <section className="score-section">
@@ -61,10 +58,7 @@ export function Inspector({
         </div>
         <div className="score-bars">
           {layers.map((layer) => {
-            const signedContribution =
-              !hasPositiveLayer && layer.id === "cooling" && enabled.cooling
-                ? -cell.cooling * 100
-                : cell[layer.id] * weights[layer.id] * layer.direction * 100;
+            const signedContribution = cell[layer.id] * weights[layer.id] * 100;
             const width = Math.min(100, cell[layer.id] * 100);
             return (
               <div className={`score-bar-row ${!enabled[layer.id] ? "is-disabled" : ""}`} key={layer.id}>
@@ -79,39 +73,22 @@ export function Inspector({
               </div>
             );
           })}
-          {serviceReduction > 0 && (
-            <div className="score-bar-row service-score-row">
-              <div>
-                <span className="mini-swatch service-swatch" />
-                <span>Placed station coverage</span>
-                <output>-{serviceReduction}</output>
-              </div>
-              <div className="bar-track">
-                <i
-                  style={{
-                    width: `${Math.round(stationCoverage * 100)}%`,
-                    backgroundColor: "#2d6cdf",
-                  }}
-                />
-              </div>
-            </div>
-          )}
         </div>
       </section>
 
-      <div className={`total-score ${score < 0 ? "is-negative" : ""}`}>
-        <span>{serviceReduction > 0 ? "Score after station coverage" : "Composite score"}</span>
+      <div className="total-score">
+        <span>Site priority</span>
         <strong>{score}<small>/100</small></strong>
       </div>
 
       <section className="radius-section">
         <div className="section-label">
-          <h3>Coverage radius</h3>
+          <h3>Service radius</h3>
           <div className="radius-stepper">
             <button
               type="button"
-              title="Decrease coverage radius"
-              aria-label="Decrease coverage radius"
+              title="Decrease service radius"
+              aria-label="Decrease service radius"
               disabled={radius <= 100}
               onClick={() => onRadius(Math.max(100, radius - 50))}
             >
@@ -120,8 +97,8 @@ export function Inspector({
             <strong>{radius} m</strong>
             <button
               type="button"
-              title="Increase coverage radius"
-              aria-label="Increase coverage radius"
+              title="Increase service radius"
+              aria-label="Increase service radius"
               disabled={radius >= 300 || (isPlaced && radius >= maxAffordableRadius)}
               onClick={() => onRadius(Math.min(isPlaced ? maxAffordableRadius : 300, radius + 50))}
             >
@@ -135,7 +112,7 @@ export function Inspector({
           max={isPlaced ? maxAffordableRadius : 300}
           step="50"
           value={radius}
-          title="Adjust coverage radius"
+          title="Adjust service radius"
           onChange={(event) => onRadius(Number(event.target.value))}
         />
         <div className="range-labels"><span>100 m</span><span>200 m</span><span>300 m</span></div>
@@ -148,7 +125,15 @@ export function Inspector({
             <dd>${metrics.cost.toLocaleString()}</dd>
           </div>
           <div>
-            <dt><TrendingDown size={15} /> Score impact</dt>
+            <dt><Users size={15} /> Capacity</dt>
+            <dd>{metrics.capacity.toLocaleString()} people</dd>
+          </div>
+          <div>
+            <dt><Users size={15} /> People served</dt>
+            <dd>+{metrics.peopleReached.toLocaleString()}</dd>
+          </div>
+          <div>
+            <dt><TrendingDown size={15} /> Priority reduced</dt>
             <dd>+{scoreImpact.toLocaleString()} pts</dd>
           </div>
         </dl>

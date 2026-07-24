@@ -1,32 +1,27 @@
 const CELL_SIZE_METRES = 20;
-const CELL_HALF_DIAGONAL = Math.SQRT2 / 2;
 const LOCAL_POOL_LIMIT = 700;
 const LOCAL_PASSES = 2;
 const GLOBAL_PRIORITY_POOL = 900;
 const REFINEMENT_POOL_LIMIT = 36;
 const SPATIAL_BLOCK_CELLS = 16;
 
-const buildOffsets = (radii) => new Map(radii.map((radius) => {
-  const radiusInCells = radius / CELL_SIZE_METRES;
-  const reach = Math.ceil(radiusInCells + 1);
-  const offsets = [];
+const buildRings = (radii) => new Map(radii.map((radius) => {
+  const reach = Math.floor(radius / CELL_SIZE_METRES);
+  const rings = Array.from({ length: reach + 1 }, () => []);
   for (let offsetY = -reach; offsetY <= reach; offsetY += 1) {
     for (let offsetX = -reach; offsetX <= reach; offsetX += 1) {
-      const distance = Math.max(0, Math.hypot(offsetX, offsetY) - CELL_HALF_DIAGONAL);
-      if (distance > radiusInCells) continue;
-      offsets.push({
-        x: offsetX,
-        y: offsetY,
-        coverage: Math.max(0, 1 - distance / radiusInCells),
-      });
+      const ring = Math.abs(offsetX) + Math.abs(offsetY);
+      if (ring <= reach) rings[ring].push({ x: offsetX, y: offsetY });
     }
   }
-  return [radius, offsets];
+  return [radius, rings];
 }));
 
-const stationCost = (candidate, radius) => {
-  const landFactor = 0.45 + 0.55 * candidate.flow;
-  return Math.round((160000 + radius * 650 + landFactor * 85000) / 1000) * 1000;
+const stationCost = (candidate, radius, baseCosts) => {
+  const localIndex = Number.isFinite(candidate.housingCostIndex) && candidate.housingCostIndex > 0
+    ? candidate.housingCostIndex
+    : 1;
+  return Math.round((baseCosts[radius] * localIndex) / 1000) * 1000;
 };
 
 self.onmessage = ({ data }) => {
@@ -38,19 +33,101 @@ self.onmessage = ({ data }) => {
     columns,
     rows,
     radii,
-    scoreReduction,
+    capacities,
+    baseCosts,
     includeTrace = false,
     greedyOnly = false,
     fullTraversal = false,
   } = data;
 
   try {
-    const offsetsByRadius = buildOffsets(radii);
+    const ringsByRadius = buildRings(radii);
     const baseScores = new Float32Array(columns * rows);
-    for (const cell of demandCells) baseScores[cell.y * columns + cell.x] = cell.score;
+    const initialDemand = new Float64Array(columns * rows);
+    for (const cell of demandCells) {
+      const index = cell.y * columns + cell.x;
+      baseScores[index] = cell.score;
+      initialDemand[index] = Math.max(0, cell.population);
+    }
+
+    const evaluateStation = (candidate, radius, residualDemand) => {
+      let remainingCapacity = capacities[radius] ?? 0;
+      let gain = 0;
+      let served = 0;
+      for (const ring of ringsByRadius.get(radius)) {
+        const ringCells = [];
+        let ringDemand = 0;
+        for (const offset of ring) {
+          const x = candidate.x + offset.x;
+          const y = candidate.y + offset.y;
+          if (x < 0 || x >= columns || y < 0 || y >= rows) continue;
+          const index = y * columns + x;
+          const demand = residualDemand[index];
+          if (demand <= 0) continue;
+          ringCells.push({ index, demand });
+          ringDemand += demand;
+        }
+        if (ringDemand <= 0) continue;
+        const ringServed = Math.min(remainingCapacity, ringDemand);
+        const ratio = ringServed / ringDemand;
+        for (const item of ringCells) {
+          const amount = item.demand * ratio;
+          gain += amount * baseScores[item.index] / 100;
+        }
+        served += ringServed;
+        remainingCapacity -= ringServed;
+        if (remainingCapacity <= 1e-6) break;
+      }
+      return { gain, served };
+    };
+
+    const applyStation = (station, residualDemand) => {
+      let remainingCapacity = station.capacity ?? capacities[station.radius] ?? 0;
+      let gain = 0;
+      let served = 0;
+      for (const ring of ringsByRadius.get(station.radius)) {
+        const ringCells = [];
+        let ringDemand = 0;
+        for (const offset of ring) {
+          const x = station.x + offset.x;
+          const y = station.y + offset.y;
+          if (x < 0 || x >= columns || y < 0 || y >= rows) continue;
+          const index = y * columns + x;
+          const demand = residualDemand[index];
+          if (demand <= 0) continue;
+          ringCells.push({ index, demand });
+          ringDemand += demand;
+        }
+        if (ringDemand <= 0) continue;
+        const ringServed = Math.min(remainingCapacity, ringDemand);
+        const ratio = ringServed / ringDemand;
+        for (const item of ringCells) {
+          const amount = item.demand * ratio;
+          residualDemand[item.index] = Math.max(0, residualDemand[item.index] - amount);
+          gain += amount * baseScores[item.index] / 100;
+        }
+        served += ringServed;
+        remainingCapacity -= ringServed;
+        if (remainingCapacity <= 1e-6) break;
+      }
+      return { gain, served };
+    };
+
+    const evaluateSolution = (solution) => {
+      const residualDemand = initialDemand.slice();
+      let value = 0;
+      let population = 0;
+      for (const station of solution) {
+        const result = applyStation(station, residualDemand);
+        value += result.gain;
+        population += result.served;
+      }
+      return { residualDemand, value, population };
+    };
 
     const candidatePriority = (candidate) =>
-      (candidate.score + 1) / stationCost(candidate, radii[0]);
+      (candidate.score + 1) /
+      stationCost(candidate, radii[0], baseCosts);
     const preselectCandidates = () => {
       if (fullTraversal) return candidates;
       if (candidates.length <= GLOBAL_PRIORITY_POOL * 2) return candidates;
@@ -79,56 +156,12 @@ self.onmessage = ({ data }) => {
       },
     });
 
-    const marginalGain = (candidate, radius, coverageState) => {
-      let gain = 0;
-      for (const offset of offsetsByRadius.get(radius)) {
-        const x = candidate.x + offset.x;
-        const y = candidate.y + offset.y;
-        if (x < 0 || x >= columns || y < 0 || y >= rows) continue;
-        const index = y * columns + x;
-        const baseScore = baseScores[index];
-        if (baseScore <= 0 || offset.coverage <= coverageState[index]) continue;
-        const previous = Math.min(baseScore, scoreReduction * coverageState[index]);
-        const next = Math.min(baseScore, scoreReduction * offset.coverage);
-        gain += next - previous;
-      }
-      return gain;
-    };
-
-    const applyStation = (candidate, radius, coverageState) => {
-      for (const offset of offsetsByRadius.get(radius)) {
-        const x = candidate.x + offset.x;
-        const y = candidate.y + offset.y;
-        if (x < 0 || x >= columns || y < 0 || y >= rows) continue;
-        const index = y * columns + x;
-        if (baseScores[index] > 0 && offset.coverage > coverageState[index]) {
-          coverageState[index] = offset.coverage;
-        }
-      }
-    };
-
-    const buildCoverage = (solution) => {
-      const coverageState = new Float32Array(columns * rows);
-      for (const station of solution) applyStation(station, station.radius, coverageState);
-      return coverageState;
-    };
-
-    const coverageValue = (coverageState) => {
-      let value = 0;
-      for (let index = 0; index < baseScores.length; index += 1) {
-        if (baseScores[index] > 0 && coverageState[index] > 0) {
-          value += Math.min(baseScores[index], scoreReduction * coverageState[index]);
-        }
-      }
-      return value;
-    };
-
     const potentialById = new Map();
     const greedySteps = [];
     const extendGreedy = (initialSolution, collectPotential = false, recordSteps = false) => {
       const solution = [...initialSolution];
       const selectedIds = new Set(solution.map((station) => station.id));
-      const coverageState = buildCoverage(solution);
+      const state = evaluateSolution(solution);
       let spent = solution.reduce((sum, station) => sum + station.cost, 0);
       let iteration = solution.length;
 
@@ -140,17 +173,26 @@ self.onmessage = ({ data }) => {
           if (selectedIds.has(candidate.id)) continue;
           let bestCandidateDensity = 0;
           for (const radius of radii) {
-            const cost = stationCost(candidate, radius);
+            const cost = stationCost(candidate, radius, baseCosts);
             if (cost > remainingBudget) continue;
             evaluatedOptions += 1;
-            const gain = marginalGain(candidate, radius, coverageState);
-            const density = gain / cost;
+            const result = evaluateStation(candidate, radius, state.residualDemand);
+            const density = result.gain / cost;
             if (collectPotential && density > bestCandidateDensity) bestCandidateDensity = density;
             if (
-              gain > 0 &&
-              (!best || density > best.density || (density === best.density && gain > best.gain))
+              result.gain > 0 &&
+              (!best || density > best.density ||
+                (density === best.density && result.gain > best.gain))
             ) {
-              best = { ...candidate, radius, cost, gain, density };
+              best = {
+                ...candidate,
+                radius,
+                capacity: capacities[radius],
+                cost,
+                gain: result.gain,
+                served: result.served,
+                density,
+              };
             }
           }
           if (collectPotential && bestCandidateDensity > 0) {
@@ -158,33 +200,45 @@ self.onmessage = ({ data }) => {
           }
         }
         if (!best) break;
-        solution.push({ id: best.id, x: best.x, y: best.y, flow: best.flow, radius: best.radius, cost: best.cost });
+        const station = {
+          id: best.id,
+          x: best.x,
+          y: best.y,
+          radius: best.radius,
+          capacity: best.capacity,
+          cost: best.cost,
+        };
+        solution.push(station);
         selectedIds.add(best.id);
         spent += best.cost;
-        applyStation(best, best.radius, coverageState);
+        const applied = applyStation(station, state.residualDemand);
+        state.value += applied.gain;
+        state.population += applied.served;
         iteration += 1;
-        const totalScore = Math.round(coverageValue(coverageState));
         if (recordSteps) {
           greedySteps.push({
             iteration,
-            station: {
-              id: best.id,
-              x: best.x,
-              y: best.y,
-              radius: best.radius,
-              cost: best.cost,
-            },
-            marginalGain: Math.round(best.gain),
+            station,
+            marginalGain: Math.round(applied.gain),
+            peopleServed: Math.round(applied.served),
             efficiency: Math.round(best.density * 100000),
-            totalScore,
+            totalScore: Math.round(state.value),
             spent,
             remainingBudget: budget - spent,
             evaluatedOptions,
           });
         }
-        self.postMessage({ id, progress: { phase: "greedy", iteration, score: totalScore } });
+        self.postMessage({
+          id,
+          progress: {
+            phase: "greedy",
+            iteration,
+            score: Math.round(state.value),
+            population: Math.round(state.population),
+          },
+        });
       }
-      return { solution, coverageState, value: coverageValue(coverageState) };
+      return { solution, ...state };
     };
 
     let result = extendGreedy([], true, includeTrace);
@@ -203,16 +257,15 @@ self.onmessage = ({ data }) => {
       for (let removeIndex = 0; removeIndex < result.solution.length; removeIndex += 1) {
         const reducedSolution = result.solution.filter((_, index) => index !== removeIndex);
         const reducedIds = new Set(reducedSolution.map((station) => station.id));
-        const reducedCoverage = buildCoverage(reducedSolution);
-        const reducedValue = coverageValue(reducedCoverage);
+        const reduced = evaluateSolution(reducedSolution);
         const reducedCost = reducedSolution.reduce((sum, station) => sum + station.cost, 0);
-
         for (const candidate of localPool) {
           if (reducedIds.has(candidate.id)) continue;
           for (const radius of radii) {
-            const cost = stationCost(candidate, radius);
+            const cost = stationCost(candidate, radius, baseCosts);
             if (reducedCost + cost > budget) continue;
-            const value = reducedValue + marginalGain(candidate, radius, reducedCoverage);
+            const option = evaluateStation(candidate, radius, reduced.residualDemand);
+            const value = reduced.value + option.gain;
             if (value > result.value + 0.5 && (!bestMove || value > bestMove.value)) {
               bestMove = {
                 value,
@@ -220,8 +273,8 @@ self.onmessage = ({ data }) => {
                   id: candidate.id,
                   x: candidate.x,
                   y: candidate.y,
-                  flow: candidate.flow,
                   radius,
+                  capacity: capacities[radius],
                   cost,
                 }],
               };
@@ -229,10 +282,12 @@ self.onmessage = ({ data }) => {
           }
         }
       }
-
       if (!bestMove) break;
       result = extendGreedy(bestMove.solution);
-      self.postMessage({ id, progress: { phase: "local", iteration: pass + 1, score: Math.round(result.value) } });
+      self.postMessage({
+        id,
+        progress: { phase: "local", iteration: pass + 1, score: Math.round(result.value) },
+      });
     }
 
     const refinementIds = [
@@ -244,18 +299,11 @@ self.onmessage = ({ data }) => {
           .map(([candidateId]) => candidateId),
       ]),
     ];
-
     self.postMessage({
       id,
       steps: includeTrace ? greedySteps : undefined,
       refinementIds: fullTraversal ? refinementIds : undefined,
-      solution: result.solution.map(({ id: stationId, x, y, radius, cost }) => ({
-        id: stationId,
-        x,
-        y,
-        radius,
-        cost,
-      })),
+      solution: result.solution,
     });
   } catch (error) {
     self.postMessage({ id, error: error instanceof Error ? error.message : String(error) });

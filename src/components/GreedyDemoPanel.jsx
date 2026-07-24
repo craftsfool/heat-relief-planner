@@ -38,8 +38,10 @@ export function GreedyDemoPanel({
             <strong>Candidate #{currentStep.rank} · {currentStep.zone}</strong>
           </div>
           <p><span>Marginal reduction</span><strong>+{currentStep.marginalGain.toLocaleString()} pts</strong></p>
+          <p><span>People served</span><strong>+{currentStep.peopleServed.toLocaleString()}</strong></p>
           <p><span>Efficiency</span><strong>{currentStep.efficiency.toLocaleString()} pts / $100k</strong></p>
-          <p><span>Radius · Cost</span><strong>{currentStep.station.radius} m · ${currentStep.station.cost.toLocaleString()}</strong></p>
+          <p><span>Radius · Capacity</span><strong>{currentStep.station.radius} m · {currentStep.station.capacity.toLocaleString()}</strong></p>
+          <p><span>Cost</span><strong>${currentStep.station.cost.toLocaleString()}</strong></p>
           <p><span>Options · Budget left</span><strong>{currentStep.evaluatedOptions.toLocaleString()} · ${currentStep.remainingBudget.toLocaleString()}</strong></p>
         </section>
       )}

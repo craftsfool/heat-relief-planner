@@ -14,9 +14,10 @@ import {
   buildCity,
   generateRandomSolution,
   getCellMetrics,
+  getCellDemand,
+  getDemandState,
   getPopulationReached,
   getPriorityReduction,
-  getStationCoverage,
   rankChallengeSites,
   scoreCell,
   selectChallengeSites,
@@ -92,15 +93,25 @@ export default function App() {
     : visibleCandidates[0] ?? null;
   const candidateRank = visibleCandidates.findIndex((candidate) => candidate.id === selected?.id) + 1;
   const isCandidate = candidateRank > 0;
-  const selectedBaseScore = selected ? scoreCell(selected, weights, enabled) : 0;
-  const selectedScore = selected ? scoreCell(selected, weights, enabled, placed) : 0;
-  const serviceReduction = selectedBaseScore - selectedScore;
-  const stationCoverage = selected ? getStationCoverage(selected, placed) : 0;
   const selectedStation = placed.find((station) => station.id === selected?.id);
   const effectiveRadius = selectedStation?.radius ?? radius;
+  const demandState = useMemo(
+    () => getDemandState(planningCells, placed),
+    [placed, planningCells],
+  );
+  const selectedDemand = selected
+    ? getCellDemand(selected, demandState)
+    : { initial: 0, afterExisting: 0, remaining: 0, servedByPlayer: 0 };
+  const selectedScore = selected ? scoreCell(selected, weights, enabled) : 0;
+  const metricBaseStations = useMemo(
+    () => selectedStation
+      ? placed.filter((station) => station.id !== selectedStation.id)
+      : placed,
+    [placed, selectedStation],
+  );
   const calculatedMetrics = useMemo(
-    () => getCellMetrics(selected, effectiveRadius, planningCells),
-    [selected, effectiveRadius, planningCells],
+    () => getCellMetrics(selected, effectiveRadius, planningCells, metricBaseStations),
+    [selected, effectiveRadius, metricBaseStations, planningCells],
   );
   const metrics = selectedStation
     ? { ...calculatedMetrics, cost: selectedStation.cost }
@@ -133,10 +144,11 @@ export default function App() {
       x: selected.x,
       y: selected.y,
       radius: effectiveRadius,
+      capacity: metrics.capacity,
       cost: metrics.cost,
     };
     return getPriorityReduction(planningCells, [...placed, proposedStation], weights, enabled) - gameScore;
-  }, [effectiveRadius, enabled, gameScore, isCandidate, metrics.cost, placed, planningCells, selected, selectedStation, weights]);
+  }, [effectiveRadius, enabled, gameScore, isCandidate, metrics.capacity, metrics.cost, placed, planningCells, selected, selectedStation, weights]);
   const maxAffordableRadius = selected
     ? STATION_RADII.filter((option) => {
         const optionCost = getCellMetrics(selected, option, planningCells).cost;
@@ -374,6 +386,7 @@ export default function App() {
         x: selected.x,
         y: selected.y,
         radius,
+        capacity: metrics.capacity,
         cost: metrics.cost,
       },
     ]);
@@ -391,12 +404,18 @@ export default function App() {
       setRadius(value);
       return;
     }
-    const nextMetrics = getCellMetrics(selected, value, planningCells);
+    const withoutSelected = placed.filter((station) => station.id !== selectedStation.id);
+    const nextMetrics = getCellMetrics(selected, value, planningCells, withoutSelected);
     if (spent - selectedStation.cost + nextMetrics.cost > STARTING_BUDGET) return;
     setPlaced((current) =>
       current.map((station) =>
         station.id === selectedStation.id
-          ? { ...station, radius: value, cost: nextMetrics.cost }
+          ? {
+              ...station,
+              radius: value,
+              capacity: nextMetrics.capacity,
+              cost: nextMetrics.cost,
+            }
           : station,
       ),
     );
@@ -457,6 +476,7 @@ export default function App() {
           selected={selected}
           hovered={hovered}
           placed={placed}
+          demandState={demandState}
           activeSubzoneCode={activeSubzoneCode}
           greedyDemo={greedyDemo}
           onSubzone={(code) => {
@@ -489,8 +509,7 @@ export default function App() {
           weights={weights}
           enabled={enabled}
           score={selectedScore}
-          serviceReduction={serviceReduction}
-          stationCoverage={stationCoverage}
+          demand={selectedDemand}
           radius={effectiveRadius}
           metrics={metrics}
           budget={budget}
