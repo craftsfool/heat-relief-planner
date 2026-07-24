@@ -1,0 +1,61 @@
+name: Precompute standard solutions
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "src/data/**"
+      - "src/model/**"
+      - "scripts/precompute-standard-solution.mjs"
+      - ".github/workflows/precompute-solutions.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: precompute-standard-solutions
+  cancel-in-progress: true
+
+jobs:
+  solve:
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario: [baseline, high-growth, heatwave]
+        time: [morning, afternoon, evening]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Solve ${{ matrix.scenario }} / ${{ matrix.time }}
+        run: npm run precompute:solution -- --scenario=${{ matrix.scenario }} --time=${{ matrix.time }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: solution-${{ matrix.scenario }}-${{ matrix.time }}
+          path: public/solutions
+          if-no-files-found: error
+
+  publish:
+    needs: solve
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: solution-*
+          path: public/solutions
+          merge-multiple: true
+      - name: Commit refreshed solution cache
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add public/solutions
+          git diff --cached --quiet && exit 0
+          git commit -m "Refresh standard solver cache"
+          git push

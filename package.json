@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "benchmark:solver": "node scripts/benchmark-exact-solver.mjs",
+    "precompute:solution": "node scripts/precompute-standard-solution.mjs",
     "generate:queenstown": "node scripts/generate-queenstown-grid.mjs",
     "generate:facilities": "node scripts/map-queenstown-existing-shelters.mjs",
     "generate:socioeconomic": "node scripts/map-queenstown-socioeconomic-data.mjs",
@@ -14,6 +15,8 @@
     "test:solver": "node scripts/verify-exact-solver.mjs"
   },
   "dependencies": {
+    "@vercel/blob": "^2.0.0",
+    "@vercel/queue": "^0.1.0",
     "@vitejs/plugin-react": "latest",
     "html-to-image": "^1.11.13",
     "lucide-react": "latest",

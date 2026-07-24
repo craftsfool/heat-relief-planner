@@ -87,12 +87,12 @@ export function TopBar({
           idleIcon={Shuffle}
           holdIcon={Earth}
           idleLabel="New game"
-          holdLabel="Hold for full-map search"
-          workingLabel="Scanning full map"
-          completeLabel="Full map scanned"
+          holdLabel="Hold for global plan"
+          workingLabel="Finding global plan"
+          completeLabel="Global plan ready"
           errorLabel="Search failed"
-          title={`Click for ${candidateCount} new fixed sites. Press and hold, or Shift-click, to evaluate every buildable cell and radius, then run exact refinement.`}
-          ariaLabel="New game. Press and hold, or Shift-click, to scan every buildable map cell and refine the full-map plan."
+          title={`Click for ${candidateCount} new fixed sites. Press and hold, or Shift-click, to load a precomputed plan, run the queued solver, or scan the map with parallel browser workers.`}
+          ariaLabel="New game. Press and hold, or Shift-click, to find a global plan."
           onClick={onNewChallenge}
           onHold={onGlobalSolution}
         />

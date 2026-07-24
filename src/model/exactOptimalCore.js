@@ -1,5 +1,6 @@
 const CELL_SIZE_METRES = 20;
 const EPSILON = 1e-8;
+const COST_UNIT = 1000;
 const DEFAULT_CAPACITIES = { 100: 500, 150: 1000, 200: 2000, 250: 3000, 300: 4500 };
 const DEFAULT_BASE_COSTS = { 100: 180000, 150: 240000, 200: 320000, 250: 410000, 300: 510000 };
 
@@ -35,21 +36,6 @@ const isBetter = (score, population, spent, incumbent) => {
   if (population > incumbent.population + EPSILON) return true;
   if (Math.abs(population - incumbent.population) > EPSILON) return false;
   return spent < incumbent.spent;
-};
-
-const fractionalUpper = (items, budget) => {
-  const ranked = items
-    .filter((item) => item.value > EPSILON && item.cost > 0)
-    .sort((a, b) => b.value / b.cost - a.value / a.cost);
-  let remaining = budget;
-  let value = 0;
-  for (const item of ranked) {
-    if (remaining <= 0) break;
-    const fraction = Math.min(1, remaining / item.cost);
-    value += item.value * fraction;
-    remaining -= item.cost * fraction;
-  }
-  return value;
 };
 
 export function solveExactOptimal({
@@ -178,6 +164,33 @@ export function solveExactOptimal({
   }).filter((group) => group.options.length);
 
   const groups = rawGroups;
+  const budgetUnits = Math.floor(budget / COST_UNIT);
+  const buildSuffixUpper = (field) => {
+    const suffix = Array.from(
+      { length: groups.length + 1 },
+      () => new Float64Array(budgetUnits + 1),
+    );
+    for (let depth = groups.length - 1; depth >= 0; depth -= 1) {
+      const current = suffix[depth];
+      const next = suffix[depth + 1];
+      const group = groups[depth];
+      for (let units = 0; units <= budgetUnits; units += 1) {
+        let best = next[units];
+        for (const option of group.options) {
+          const optionUnits = Math.ceil(option.cost / COST_UNIT);
+          if (optionUnits > units) continue;
+          const value = field === "score"
+            ? option.standaloneScore
+            : option.standalonePopulation;
+          best = Math.max(best, value + next[units - optionUnits]);
+        }
+        current[units] = best;
+      }
+    }
+    return suffix;
+  };
+  const scoreSuffixUpper = buildSuffixUpper("score");
+  const populationSuffixUpper = buildSuffixUpper("population");
 
   const greedySeed = (preferGain = false) => {
     const residual = initialDemand.slice();
@@ -266,16 +279,13 @@ export function solveExactOptimal({
   };
 
   const upperBound = (depth, remainingBudget, field) => {
-    const items = [];
-    for (let index = depth; index < groups.length; index += 1) {
-      for (const option of groups[index].options) {
-        items.push({
-          value: field === "score" ? option.standaloneScore : option.standalonePopulation,
-          cost: option.cost,
-        });
-      }
-    }
-    return fractionalUpper(items, remainingBudget);
+    const units = Math.max(0, Math.min(
+      budgetUnits,
+      Math.floor(remainingBudget / COST_UNIT),
+    ));
+    return field === "score"
+      ? scoreSuffixUpper[depth][units]
+      : populationSuffixUpper[depth][units];
   };
 
   const search = (depth, spent, score, population) => {

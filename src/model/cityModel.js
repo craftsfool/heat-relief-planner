@@ -1,4 +1,4 @@
-import queenstownGrid from "../data/queenstownGrid.json";
+import queenstownGrid from "../data/queenstownGrid.json" with { type: "json" };
 
 export const GRID_COLS = queenstownGrid.metadata.columns;
 export const GRID_ROWS = queenstownGrid.metadata.rows;

@@ -22,6 +22,13 @@ import {
 } from "./model/cityModel";
 import { generateGreedyDemonstration, generateGreedyLocalSolution } from "./model/greedyLocalSolution";
 import { generateExactOptimalSolution } from "./model/exactOptimalSolution";
+import {
+  isStandardSolverConfig,
+} from "./model/solverTask";
+import {
+  loadPrecomputedSolution,
+  requestQueuedSolution,
+} from "./model/solutionSources";
 
 const STARTING_BUDGET = 2_500_000;
 const DEFAULT_CANDIDATE_COUNT = 12;
@@ -307,21 +314,54 @@ export default function App() {
 
   const applyGlobalImprovedSolution = async () => {
     closeGreedyDemo();
-    const buildableCells = planningCells.filter((cell) => cell.buildable);
-    const traversal = await generateGreedyLocalSolution(
-      buildableCells,
-      planningCells,
-      STARTING_BUDGET,
-      { fullTraversal: true },
-    );
-    const refinementIdSet = new Set(traversal.refinementIds);
-    const refinementPool = buildableCells.filter((cell) => refinementIdSet.has(cell.id));
-    const { solution, stats } = await generateExactOptimalSolution(
-      refinementPool,
-      planningCells,
-      STARTING_BUDGET,
-    );
-    if (!stats.optimal) throw new Error("The refinement solver finished without an optimality proof.");
+    const solverConfig = {
+      scenario,
+      time,
+      subzoneCode: activeSubzoneCode,
+      budget: STARTING_BUDGET,
+    };
+    let solution = null;
+
+    try {
+      const precomputed = await loadPrecomputedSolution(solverConfig);
+      solution = precomputed?.solution ?? null;
+      if (solution) console.info("Loaded precomputed global solution", precomputed.key);
+    } catch (error) {
+      console.warn("Precomputed solution unavailable", error);
+    }
+
+    if (!solution && !isStandardSolverConfig(solverConfig)) {
+      try {
+        const queued = await requestQueuedSolution(solverConfig);
+        solution = queued.solution;
+        console.info("Loaded Vercel queued solution", queued.key);
+      } catch (error) {
+        console.warn("Remote solver unavailable; using browser workers", error);
+      }
+    }
+
+    if (!solution) {
+      const buildableCells = planningCells.filter((cell) => cell.buildable);
+      const traversal = await generateGreedyLocalSolution(
+        buildableCells,
+        planningCells,
+        STARTING_BUDGET,
+        { fullTraversal: true },
+      );
+      const refinementLimit = activeSubzoneCode ? 10 : 24;
+      const refinementIdSet = new Set(traversal.refinementIds.slice(0, refinementLimit));
+      const refinementPool = buildableCells.filter((cell) => refinementIdSet.has(cell.id));
+      const exact = await generateExactOptimalSolution(
+        refinementPool,
+        planningCells,
+        STARTING_BUDGET,
+      );
+      if (!exact.stats.optimal) {
+        throw new Error("The refinement solver finished without an optimality proof.");
+      }
+      solution = exact.solution;
+    }
+
     const solutionIds = solution.map((station) => station.id);
     const rankedSolution = rankChallengeSites(cells, solutionIds);
     setChallengeIds(solutionIds);
