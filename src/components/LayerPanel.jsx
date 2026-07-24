@@ -1,8 +1,7 @@
 import { useEffect, useState } from "react";
-import { Eye, EyeOff, Info, MapPinned, Minus, Plus, X } from "lucide-react";
+import { Eye, Info, MapPinned, Minus, Plus, X } from "lucide-react";
 
-export function LayerPanel({ layers, candidateCount, weights, enabled, activeLayer, onToggle, onCandidateCount, onWeight, onSelect }) {
-  const weightTotal = Object.values(weights).reduce((sum, value) => sum + value, 0);
+export function LayerPanel({ layers, candidateCount, activeLayer, mode, onCandidateCount, onSelect }) {
   const [isGuideOpen, setIsGuideOpen] = useState(false);
 
   useEffect(() => {
@@ -20,15 +19,15 @@ export function LayerPanel({ layers, candidateCount, weights, enabled, activeLay
       <div className="panel-heading">
         <div>
           <h2>Layers</h2>
-          <p>Adjust each factor's influence.</p>
+          <p>Select one dataset to inspect.</p>
         </div>
         <button
           className={`icon-button ${isGuideOpen ? "is-active" : ""}`}
           type="button"
-          title="Layer score guide"
-          aria-label="Layer score guide"
+          title="Layer data guide"
+          aria-label="Layer data guide"
           aria-expanded={isGuideOpen}
-          aria-controls="layer-score-guide"
+          aria-controls="layer-data-guide"
           onClick={() => setIsGuideOpen((open) => !open)}
         >
           <Info size={17} />
@@ -36,28 +35,28 @@ export function LayerPanel({ layers, candidateCount, weights, enabled, activeLay
       </div>
 
       {isGuideOpen && (
-        <section className="layer-guide" id="layer-score-guide" aria-label="Layer scoring method">
+        <section className="layer-guide" id="layer-data-guide" aria-label="Layer data method">
           <header>
             <div>
               <span>Model method</span>
-              <h3>Layer score guide</h3>
+              <h3>Layer data guide</h3>
             </div>
             <button
               className="icon-button"
               type="button"
-              title="Close layer score guide"
-              aria-label="Close layer score guide"
+              title="Close layer data guide"
+              aria-label="Close layer data guide"
               onClick={() => setIsGuideOpen(false)}
             >
               <X size={15} />
             </button>
           </header>
           <dl>
-            <div><dt>Priority</dt><dd>Heat, senior population and footfall raise a cell's score.</dd></div>
-            <div><dt>Existing shelters</dt><dd>Mapped amenities consume nearby population demand before play starts.</dd></div>
-            <div><dt>Capacity</dt><dd>Each shelter serves the centre first, then successive Manhattan-distance rings.</dd></div>
+            <div><dt>Population demand</dt><dd>Remaining people after existing and newly placed shelters serve nearby cells.</dd></div>
+            <div><dt>Regional cost</dt><dd>The HDB price proxy scales construction cost at each candidate cell.</dd></div>
+            <div><dt>Heat exposure</dt><dd>A separate scenario layer; it is not mixed into the optimisation objective.</dd></div>
           </dl>
-          <p>Game value = people served × local priority, with no duplicated demand.</p>
+          <p>The solver maximises people served within the available budget.</p>
         </section>
       )}
 
@@ -100,53 +99,25 @@ export function LayerPanel({ layers, candidateCount, weights, enabled, activeLay
 
       <div className="layer-list">
         {layers.map((layer) => (
-          <section
-            className={`layer-row ${activeLayer === layer.id ? "is-active" : ""}`}
+          <button
+            className={`layer-row layer-select-button ${mode === "single" && activeLayer === layer.id ? "is-active" : ""}`}
             key={layer.id}
+            type="button"
             onClick={() => onSelect(layer.id)}
           >
             <div className="layer-title-row">
-              <button
-                className="visibility-button"
-                type="button"
-                title={`${enabled[layer.id] ? "Hide" : "Show"} ${layer.label}`}
-                aria-label={`${enabled[layer.id] ? "Hide" : "Show"} ${layer.label}`}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onToggle(layer.id);
-                }}
-              >
-                {enabled[layer.id] ? <Eye size={18} /> : <EyeOff size={18} />}
-              </button>
+              <span className="visibility-button" aria-hidden="true"><Eye size={18} /></span>
               <span className="layer-swatch" style={{ backgroundColor: layer.color }} />
               <div>
                 <strong>{layer.label}</strong>
+                <small>{layer.description}</small>
               </div>
             </div>
-            <div className="weight-control">
-              <label htmlFor={`weight-${layer.id}`}>Weight</label>
-              <input
-                id={`weight-${layer.id}`}
-                type="range"
-                min="0"
-                max="0.6"
-                step="0.05"
-                value={weights[layer.id]}
-                onClick={(event) => event.stopPropagation()}
-                onChange={(event) => onWeight(layer.id, Number(event.target.value))}
-                style={{ "--range-color": layer.color }}
-              />
-              <output>{weights[layer.id].toFixed(2)}</output>
-            </div>
-          </section>
+          </button>
         ))}
       </div>
 
-      <div className="layer-note">
-        <span>Current weight sum</span>
-        <strong>{weightTotal.toFixed(2)}</strong>
-      </div>
-      <p className="data-quality-note">Official population + HDB price proxy · modelled heat and flow</p>
+      <p className="data-quality-note">Official population + HDB price proxy · modelled heat exposure</p>
     </aside>
   );
 }

@@ -2,7 +2,7 @@ import { LoaderCircle, Pause, Play, RotateCcw, SkipForward, X } from "lucide-rea
 
 const PHASE_LABELS = {
   focus: "Before placement",
-  applied: "Scores recalculated",
+  applied: "Demand recalculated",
 };
 
 const RECORDING_LABELS = {
@@ -37,9 +37,8 @@ export function GreedyDemoPanel({
             <span>Decision {demo.stepIndex + 1}/{demo.steps.length} · {PHASE_LABELS[demo.phase]}</span>
             <strong>Candidate #{currentStep.rank} · {currentStep.zone}</strong>
           </div>
-          <p><span>Marginal reduction</span><strong>+{currentStep.marginalGain.toLocaleString()} pts</strong></p>
           <p><span>People served</span><strong>+{currentStep.peopleServed.toLocaleString()}</strong></p>
-          <p><span>Efficiency</span><strong>{currentStep.efficiency.toLocaleString()} pts / $100k</strong></p>
+          <p><span>Efficiency</span><strong>{currentStep.efficiency.toLocaleString()} people / $100k</strong></p>
           <p><span>Radius · Capacity</span><strong>{currentStep.station.radius} m · {currentStep.station.capacity.toLocaleString()}</strong></p>
           <p><span>Cost</span><strong>${currentStep.station.cost.toLocaleString()}</strong></p>
           <p><span>Options · Budget left</span><strong>{currentStep.evaluatedOptions.toLocaleString()} · ${currentStep.remainingBudget.toLocaleString()}</strong></p>

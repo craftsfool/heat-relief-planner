@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { scoreCell } from "../model/cityModel";
+import { formatLayerValue, getLayerIntensity } from "../model/cityModel";
 
 const FRAME_RATE = 20;
 const SCORE_LABEL_MIN_CELL_PX = 28;
@@ -38,22 +38,23 @@ const drawRecordingFrame = (context, width, height, sourceCanvas, transform, dat
     scaledMapHeight,
   );
 
-  if (screenCellSize >= SCORE_LABEL_MIN_CELL_PX) {
+  if (data.mode === "single" && screenCellSize >= SCORE_LABEL_MIN_CELL_PX) {
     const fontSize = Math.min(34, Math.max(9, screenCellSize * 0.34));
     context.textAlign = "center";
     context.textBaseline = "middle";
     context.font = `800 ${fontSize}px Arial, sans-serif`;
     for (const cell of data.scoreCells) {
       const rect = cellRect(cell);
-      const score = cell.water || cell.outside ? 0 : scoreCell(cell, data.weights, data.enabled, data.placed);
+      const value = formatLayerValue(cell, data.activeLayer, data.demandState, true);
+      const intensity = getLayerIntensity(cell, data.activeLayer, data.demandState);
       const isTarget = data.currentStep?.station.id === cell.id;
       if (isTarget) {
         context.strokeStyle = "rgba(26, 96, 201, .78)";
         context.lineWidth = 2;
         context.strokeRect(rect.left + 1, rect.top + 1, rect.width - 2, rect.height - 2);
       }
-      context.fillStyle = score <= 0 ? "rgba(53, 75, 94, .28)" : isTarget ? "rgba(8, 66, 148, .9)" : "rgba(24, 50, 76, .56)";
-      context.fillText(String(score), rect.left + rect.width / 2, rect.top + rect.height / 2);
+      context.fillStyle = intensity <= 0 ? "rgba(53, 75, 94, .28)" : isTarget ? "rgba(8, 66, 148, .9)" : "rgba(24, 50, 76, .56)";
+      context.fillText(value, rect.left + rect.width / 2, rect.top + rect.height / 2);
     }
   }
 
@@ -101,11 +102,10 @@ const drawRecordingFrame = (context, width, height, sourceCanvas, transform, dat
     const panelX = width - panelWidth - 12;
     const panelY = 12;
     const rightX = panelX + panelWidth - 10;
-    const phaseLabel = data.phase === "applied" ? "SCORES RECALCULATED" : "BEFORE PLACEMENT";
+    const phaseLabel = data.phase === "applied" ? "DEMAND RECALCULATED" : "BEFORE PLACEMENT";
     const rows = [
-      ["Marginal reduction", `+${step.marginalGain.toLocaleString()} pts`],
       ["People served", `+${step.peopleServed.toLocaleString()}`],
-      ["Efficiency", `${step.efficiency.toLocaleString()} pts / $100k`],
+      ["Efficiency", `${step.efficiency.toLocaleString()} people / $100k`],
       ["Radius · Capacity", `${step.station.radius} m · ${step.station.capacity.toLocaleString()}`],
       ["Cost", `$${step.station.cost.toLocaleString()}`],
       ["Options · Budget left", `${step.evaluatedOptions.toLocaleString()} · $${step.remainingBudget.toLocaleString()}`],

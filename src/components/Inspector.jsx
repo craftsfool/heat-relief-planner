@@ -1,11 +1,7 @@
-import { Check, CircleDollarSign, Info, MapPin, Minus, Plus, Trash2, TrendingDown, Users } from "lucide-react";
+import { Check, CircleDollarSign, Flame, MapPin, Minus, Plus, Trash2, Users } from "lucide-react";
 
 export function Inspector({
   cell,
-  layers,
-  weights,
-  enabled,
-  score,
   demand,
   radius,
   metrics,
@@ -13,7 +9,6 @@ export function Inspector({
   candidateRank,
   isCandidate,
   isPlaced,
-  scoreImpact,
   maxAffordableRadius,
   onRadius,
   onPlace,
@@ -24,7 +19,7 @@ export function Inspector({
       <aside className="inspector empty-inspector">
         <MapPin size={28} />
         <h2>Select a map cell</h2>
-        <p>Click a buildable cell to inspect its score and estimated impact.</p>
+        <p>Click a buildable cell to inspect its data and estimated impact.</p>
       </aside>
     );
   }
@@ -34,7 +29,7 @@ export function Inspector({
       <div className="candidate-heading">
         <div>
           <span>Challenge site</span>
-          <h2>{isCandidate ? `Priority #${candidateRank}` : "Locked location"}</h2>
+          <h2>{isCandidate ? `Candidate #${candidateRank}` : "Locked location"}</h2>
         </div>
         <span className={`eligibility ${isCandidate ? "is-buildable" : ""}`}>
           {isCandidate ? "Candidate" : "Unavailable"}
@@ -45,41 +40,16 @@ export function Inspector({
         <div><dt>Grid cell</dt><dd>{cell.x + 1}, {cell.y + 1}</dd></div>
         <div><dt>Zone</dt><dd>{cell.zone}</dd></div>
         <div><dt>Coordinates</dt><dd>{cell.lat.toFixed(4)}, {cell.lon.toFixed(4)}</dd></div>
-        <div><dt>Population demand</dt><dd>{Math.round(demand.remaining).toLocaleString()} / {Math.round(demand.initial).toLocaleString()}</dd></div>
-        <div><dt>Housing price proxy</dt><dd>${cell.housingPricePsm.toLocaleString()} / m²</dd></div>
       </dl>
 
-      <section className="score-section">
-        <div className="section-label">
-          <h3>Score breakdown</h3>
-          <button className="icon-button" type="button" title="Weighted layer contribution" aria-label="Weighted layer contribution">
-            <Info size={15} />
-          </button>
-        </div>
-        <div className="score-bars">
-          {layers.map((layer) => {
-            const signedContribution = cell[layer.id] * weights[layer.id] * 100;
-            const width = Math.min(100, cell[layer.id] * 100);
-            return (
-              <div className={`score-bar-row ${!enabled[layer.id] ? "is-disabled" : ""}`} key={layer.id}>
-                <div>
-                  <span className="mini-swatch" style={{ backgroundColor: layer.color }} />
-                  <span>{layer.shortLabel}</span>
-                  <output>{signedContribution > 0 ? "+" : ""}{signedContribution.toFixed(1)}</output>
-                </div>
-                <div className="bar-track">
-                  <i style={{ width: `${width}%`, backgroundColor: layer.color }} />
-                </div>
-              </div>
-            );
-          })}
-        </div>
+      <section className="site-data-section">
+        <h3>Cell data</h3>
+        <dl>
+          <div><dt><Users size={14} /> Population demand</dt><dd>{Math.round(demand.remaining).toLocaleString()} people</dd></div>
+          <div><dt><CircleDollarSign size={14} /> Regional cost</dt><dd>${cell.housingPricePsm.toLocaleString()} / m²</dd></div>
+          <div><dt><Flame size={14} /> Heat exposure</dt><dd>{Math.round(cell.heat * 100)}%</dd></div>
+        </dl>
       </section>
-
-      <div className="total-score">
-        <span>Site priority</span>
-        <strong>{score}<small>/100</small></strong>
-      </div>
 
       <section className="radius-section">
         <div className="section-label">
@@ -133,8 +103,8 @@ export function Inspector({
             <dd>+{metrics.peopleReached.toLocaleString()}</dd>
           </div>
           <div>
-            <dt><TrendingDown size={15} /> Priority reduced</dt>
-            <dd>+{scoreImpact.toLocaleString()} pts</dd>
+            <dt><Users size={15} /> Cost efficiency</dt>
+            <dd>{metrics.cost > 0 ? Math.round(metrics.peopleReached / metrics.cost * 100_000).toLocaleString() : 0} people / $100k</dd>
           </div>
         </dl>
         <button

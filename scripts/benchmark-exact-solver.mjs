@@ -4,8 +4,6 @@ import { solveExactOptimal } from "../src/model/exactOptimalCore.js";
 const CANDIDATE_COUNT = 20;
 const BUDGET = 2_500_000;
 const RADII = [100, 150, 200, 250, 300];
-const weights = { heat: 0.4, vulnerable: 0.35, flow: 0.25 };
-const enabled = { heat: true, vulnerable: true, flow: true };
 
 const makeRandom = (seed) => {
   let state = seed;
@@ -30,7 +28,7 @@ try {
     .map((cell) => ({
       x: cell.x,
       y: cell.y,
-      score: Math.max(0, cityModel.scoreCell(cell, weights, enabled)),
+      score: 100,
       population: baselineDemand.residual[cell.y * cityModel.GRID_COLS + cell.x],
     }));
 

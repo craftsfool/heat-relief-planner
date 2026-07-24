@@ -17,9 +17,7 @@ import {
   getCellDemand,
   getDemandState,
   getPopulationReached,
-  getPriorityReduction,
   rankChallengeSites,
-  scoreCell,
   selectChallengeSites,
 } from "./model/cityModel";
 import { generateGreedyDemonstration, generateGreedyLocalSolution } from "./model/greedyLocalSolution";
@@ -37,20 +35,11 @@ const INITIAL_GREEDY_DEMO = {
   error: null,
 };
 
-const initialWeights = Object.fromEntries(
-  LAYER_DEFINITIONS.map((layer) => [layer.id, layer.defaultWeight]),
-);
-const initialEnabled = Object.fromEntries(
-  LAYER_DEFINITIONS.map((layer) => [layer.id, true]),
-);
-
 export default function App() {
   const [scenario, setScenario] = useState("baseline");
   const [time, setTime] = useState("afternoon");
-  const [weights, setWeights] = useState(initialWeights);
-  const [enabled, setEnabled] = useState(initialEnabled);
-  const [mode, setMode] = useState("composite");
-  const [activeLayer, setActiveLayer] = useState("heat");
+  const [mode, setMode] = useState("base");
+  const [activeLayer, setActiveLayer] = useState("demand");
   const [selectedId, setSelectedId] = useState(null);
   const [hovered, setHovered] = useState(null);
   const [radius, setRadius] = useState(150);
@@ -76,8 +65,8 @@ export default function App() {
     [activeSubzone, cells],
   );
   const candidates = useMemo(
-    () => rankChallengeSites(cells, challengeIds, weights, enabled),
-    [cells, challengeIds, weights, enabled],
+    () => rankChallengeSites(cells, challengeIds),
+    [cells, challengeIds],
   );
   const visibleCandidates = useMemo(
     () => activeSubzoneCode
@@ -102,7 +91,6 @@ export default function App() {
   const selectedDemand = selected
     ? getCellDemand(selected, demandState)
     : { initial: 0, afterExisting: 0, remaining: 0, servedByPlayer: 0 };
-  const selectedScore = selected ? scoreCell(selected, weights, enabled) : 0;
   const metricBaseStations = useMemo(
     () => selectedStation
       ? placed.filter((station) => station.id !== selectedStation.id)
@@ -119,10 +107,6 @@ export default function App() {
   const spent = placed.reduce((sum, station) => sum + station.cost, 0);
   const budget = STARTING_BUDGET - spent;
   const isPlaced = placed.some((station) => station.id === selected?.id);
-  const gameScore = useMemo(
-    () => getPriorityReduction(planningCells, placed, weights, enabled),
-    [enabled, placed, planningCells, weights],
-  );
   const populationScore = useMemo(
     () => getPopulationReached(planningCells, placed),
     [placed, planningCells],
@@ -133,22 +117,6 @@ export default function App() {
     return Math.min(minimum, getCellMetrics(candidate, STATION_RADII[0], planningCells).cost);
   }, Number.POSITIVE_INFINITY);
   const budgetLocked = visibleCandidates.length > 0 && budget < cheapestRemainingCost;
-  const scoreImpact = useMemo(() => {
-    if (!selected || !isCandidate) return 0;
-    if (selectedStation) {
-      const withoutSelected = placed.filter((station) => station.id !== selectedStation.id);
-      return gameScore - getPriorityReduction(planningCells, withoutSelected, weights, enabled);
-    }
-    const proposedStation = {
-      id: selected.id,
-      x: selected.x,
-      y: selected.y,
-      radius: effectiveRadius,
-      capacity: metrics.capacity,
-      cost: metrics.cost,
-    };
-    return getPriorityReduction(planningCells, [...placed, proposedStation], weights, enabled) - gameScore;
-  }, [effectiveRadius, enabled, gameScore, isCandidate, metrics.capacity, metrics.cost, placed, planningCells, selected, selectedStation, weights]);
   const maxAffordableRadius = selected
     ? STATION_RADII.filter((option) => {
         const optionCost = getCellMetrics(selected, option, planningCells).cost;
@@ -214,7 +182,7 @@ export default function App() {
   const startGreedyDemo = async () => {
     const runId = greedyDemoRunRef.current + 1;
     greedyDemoRunRef.current = runId;
-    setMode("composite");
+    setMode("base");
     setPlaced([]);
     setHovered(null);
     setGreedyDemo((current) => ({
@@ -231,8 +199,6 @@ export default function App() {
         visibleCandidates,
         planningCells,
         STARTING_BUDGET,
-        weights,
-        enabled,
       );
       if (greedyDemoRunRef.current !== runId) return;
       const candidateDetails = new Map(candidates.map((candidate, index) => [candidate.id, {
@@ -303,7 +269,7 @@ export default function App() {
     closeGreedyDemo();
     const nextCandidates = selectChallengeSites(planningCells, count);
     const nextIds = nextCandidates.map((cell) => cell.id);
-    const rankedNext = rankChallengeSites(cells, nextIds, weights, enabled);
+    const rankedNext = rankChallengeSites(cells, nextIds);
     setChallengeIds(nextIds);
     setSelectedId(rankedNext[0]?.id ?? null);
     setHovered(null);
@@ -332,8 +298,6 @@ export default function App() {
       visibleCandidates,
       planningCells,
       STARTING_BUDGET,
-      weights,
-      enabled,
     );
     setPlaced(solution);
     setSelectedId(solution[0]?.id ?? visibleCandidates[0]?.id ?? null);
@@ -348,8 +312,6 @@ export default function App() {
       buildableCells,
       planningCells,
       STARTING_BUDGET,
-      weights,
-      enabled,
       { fullTraversal: true },
     );
     const refinementIdSet = new Set(traversal.refinementIds);
@@ -358,12 +320,10 @@ export default function App() {
       refinementPool,
       planningCells,
       STARTING_BUDGET,
-      weights,
-      enabled,
     );
     if (!stats.optimal) throw new Error("The refinement solver finished without an optimality proof.");
     const solutionIds = solution.map((station) => station.id);
-    const rankedSolution = rankChallengeSites(cells, solutionIds, weights, enabled);
+    const rankedSolution = rankChallengeSites(cells, solutionIds);
     setChallengeIds(solutionIds);
     setCandidateCount(solution.length);
     setPlaced(solution);
@@ -436,7 +396,7 @@ export default function App() {
         }}
         budget={budget}
         placedCount={placed.length}
-        gameScore={gameScore}
+        peopleReached={populationScore}
         candidateCount={candidates.length}
         onClear={clearPlan}
         onNewChallenge={newChallenge}
@@ -448,28 +408,18 @@ export default function App() {
         <LayerPanel
           layers={LAYER_DEFINITIONS}
           candidateCount={candidateCount}
-          weights={weights}
-          enabled={enabled}
           activeLayer={activeLayer}
-          onToggle={(id) => {
-            closeGreedyDemo();
-            setEnabled((current) => ({ ...current, [id]: !current[id] }));
-          }}
+          mode={mode}
           onCandidateCount={changeCandidateCount}
-          onWeight={(id, value) => {
-            closeGreedyDemo();
-            setWeights((current) => ({ ...current, [id]: value }));
-          }}
           onSelect={(id) => {
+            closeGreedyDemo();
             setActiveLayer(id);
-            if (mode === "base") setMode("single");
+            setMode("single");
           }}
         />
         <MapCanvas
           cells={cells}
           layers={LAYER_DEFINITIONS}
-          weights={weights}
-          enabled={enabled}
           mode={mode}
           activeLayer={activeLayer}
           candidates={candidates}
@@ -505,10 +455,6 @@ export default function App() {
         />
         <Inspector
           cell={selected}
-          layers={LAYER_DEFINITIONS}
-          weights={weights}
-          enabled={enabled}
-          score={selectedScore}
           demand={selectedDemand}
           radius={effectiveRadius}
           metrics={metrics}
@@ -516,7 +462,6 @@ export default function App() {
           candidateRank={candidateRank}
           isCandidate={isCandidate}
           isPlaced={isPlaced}
-          scoreImpact={scoreImpact}
           maxAffordableRadius={maxAffordableRadius}
           onRadius={changeRadius}
           onPlace={placeStation}
@@ -525,7 +470,6 @@ export default function App() {
       </div>
       <StatusBar
         selected={selected}
-        score={selectedScore}
         budget={budget}
         placedCount={placed.length}
         populationScore={populationScore}

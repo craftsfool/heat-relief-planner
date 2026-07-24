@@ -24,28 +24,25 @@ export const BASE_COST_BY_RADIUS = {
 
 export const LAYER_DEFINITIONS = [
   {
+    id: "demand",
+    label: "Population demand",
+    shortLabel: "Demand",
+    color: "#16a085",
+    description: "People still needing access to cooling.",
+  },
+  {
+    id: "cost",
+    label: "Regional cost",
+    shortLabel: "Cost",
+    color: "#f2b544",
+    description: "HDB price proxy used to scale construction cost.",
+  },
+  {
     id: "heat",
     label: "Heat exposure",
     shortLabel: "Heat",
     color: "#f15b5a",
-    defaultWeight: 0.4,
-    direction: 1,
-  },
-  {
-    id: "vulnerable",
-    label: "Vulnerable population",
-    shortLabel: "Vulnerability",
-    color: "#f2b544",
-    defaultWeight: 0.35,
-    direction: 1,
-  },
-  {
-    id: "flow",
-    label: "Pedestrian flow",
-    shortLabel: "Footfall",
-    color: "#41ad9e",
-    defaultWeight: 0.25,
-    direction: 1,
+    description: "Modelled heat exposure for the selected time and scenario.",
   },
 ];
 
@@ -112,6 +109,9 @@ const baseCells = decodedCells.map((cell) => ({
     ? clamp(Math.sqrt(cell.seniorPopulation / maxSeniorPopulation))
     : cell.vulnerable,
 }));
+const pricedCells = baseCells.filter((cell) => cell.housingPricePsm > 0);
+const MIN_HOUSING_PRICE = Math.min(...pricedCells.map((cell) => cell.housingPricePsm));
+const MAX_HOUSING_PRICE = Math.max(...pricedCells.map((cell) => cell.housingPricePsm));
 
 const distanceToCellArea = (a, b) =>
   Math.max(0, Math.hypot(a.x - b.x, a.y - b.y) - CELL_HALF_DIAGONAL);
@@ -130,6 +130,7 @@ export function buildCity(time = "afternoon", scenario = "baseline") {
   const flowTimeBoost = time === "evening" ? 0.12 : time === "morning" ? 0.08 : 0;
   const scenarioHeatBoost = scenario === "heatwave" ? 0.18 : 0;
   const scenarioFlowBoost = scenario === "high-growth" ? 0.18 : 0;
+  const scenarioDemandMultiplier = scenario === "high-growth" ? 1.15 : 1;
 
   return baseCells.map((cell) => {
     if (cell.outside || cell.water) return { ...cell };
@@ -137,21 +138,11 @@ export function buildCity(time = "afternoon", scenario = "baseline") {
       ...cell,
       heat: clamp(cell.heat + heatTimeBoost + scenarioHeatBoost),
       flow: clamp(cell.flow + flowTimeBoost + scenarioFlowBoost),
+      population: Number.isFinite(cell.population)
+        ? cell.population * scenarioDemandMultiplier
+        : cell.population,
     };
   });
-}
-
-export function scoreCell(cell, weights, enabledLayers) {
-  if (cell.outside) return 0;
-  const positiveWeight = LAYER_DEFINITIONS.filter(
-    (layer) => enabledLayers[layer.id],
-  ).reduce((sum, layer) => sum + weights[layer.id], 0);
-  if (!positiveWeight) return 0;
-
-  const positive = LAYER_DEFINITIONS.filter(
-    (layer) => enabledLayers[layer.id],
-  ).reduce((sum, layer) => sum + cell[layer.id] * weights[layer.id], 0);
-  return Math.round(clamp(positive / positiveWeight) * 100);
 }
 
 const demandBaselineCache = new WeakMap();
@@ -263,6 +254,7 @@ export function getDemandState(cells, placedStations = []) {
     servedByPlaced,
     perStation,
     remainingDemand: residual.reduce((sum, value) => sum + value, 0),
+    maxRemainingDemand: residual.reduce((maximum, value) => Math.max(maximum, value), 0),
   };
 }
 
@@ -277,23 +269,37 @@ export function getCellDemand(cell, demandState) {
   };
 }
 
-export function getDemandAdjustedScore(cell, demandState, weights, enabledLayers) {
-  const baseScore = scoreCell(cell, weights, enabledLayers);
-  const demand = getCellDemand(cell, demandState);
-  if (demand.afterExisting <= 0) return 0;
-  return Math.round(baseScore * clamp(demand.remaining / demand.afterExisting));
+export function getLayerValue(cell, layerId, demandState) {
+  if (!cell || cell.outside || cell.water) return 0;
+  if (layerId === "demand") return getCellDemand(cell, demandState).remaining;
+  if (layerId === "cost") return cell.housingPricePsm ?? 0;
+  if (layerId === "heat") return clamp(cell.heat) * 100;
+  return 0;
 }
 
-export function getPriorityReduction(cells, placedStations, weights, enabledLayers) {
-  if (!placedStations.length) return 0;
-  const state = getDemandState(cells, placedStations);
-  let reduction = 0;
-  for (const cell of cells) {
-    if (cell.outside || cell.water) continue;
-    const index = cell.y * GRID_COLS + cell.x;
-    reduction += state.servedByCell[index] * scoreCell(cell, weights, enabledLayers) / 100;
+export function getLayerIntensity(cell, layerId, demandState) {
+  const value = getLayerValue(cell, layerId, demandState);
+  if (layerId === "demand") {
+    const maximum = Math.max(1, demandState?.maxRemainingDemand ?? value);
+    return clamp(Math.sqrt(value / maximum));
   }
-  return Math.round(reduction);
+  if (layerId === "cost") {
+    return clamp((value - MIN_HOUSING_PRICE) / Math.max(1, MAX_HOUSING_PRICE - MIN_HOUSING_PRICE));
+  }
+  if (layerId === "heat") return clamp(value / 100);
+  return 0;
+}
+
+export function formatLayerValue(cell, layerId, demandState, compact = false) {
+  const value = getLayerValue(cell, layerId, demandState);
+  if (layerId === "demand") return Math.round(value).toLocaleString();
+  if (layerId === "cost") {
+    return compact
+      ? `$${(value / 1000).toFixed(value >= 10_000 ? 0 : 1)}k`
+      : `$${Math.round(value).toLocaleString()} / m²`;
+  }
+  if (layerId === "heat") return `${Math.round(value)}%`;
+  return "0";
 }
 
 export function selectChallengeSites(cells, count = 12, random = Math.random) {
@@ -329,16 +335,23 @@ export function selectChallengeSites(cells, count = 12, random = Math.random) {
   return selected;
 }
 
-export function rankChallengeSites(cells, siteIds, weights, enabledLayers) {
+export function rankChallengeSites(cells, siteIds) {
   const cellById = new Map(cells.map((cell) => [cell.id, cell]));
   return siteIds
     .map((id) => cellById.get(id))
     .filter(Boolean)
-    .map((cell) => ({
-      ...cell,
-      score: scoreCell(cell, weights, enabledLayers),
-    }))
-    .sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
+    .map((cell) => {
+      const metrics = getCellMetrics(cell, 150, cells);
+      return {
+        ...cell,
+        potentialPeople: metrics.peopleReached,
+        rankEfficiency: metrics.cost > 0 ? metrics.peopleReached / metrics.cost : 0,
+      };
+    })
+    .sort((a, b) =>
+      b.rankEfficiency - a.rankEfficiency
+      || b.potentialPeople - a.potentialPeople
+      || a.id.localeCompare(b.id));
 }
 
 export function estimateCellPopulation(cell) {

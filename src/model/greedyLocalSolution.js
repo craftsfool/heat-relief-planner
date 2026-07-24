@@ -5,7 +5,6 @@ import {
   STATION_RADII,
   STATION_CAPACITY_BY_RADIUS,
   getDemandState,
-  scoreCell,
 } from "./cityModel";
 
 let solverWorker;
@@ -48,8 +47,6 @@ export function generateGreedyLocalSolution(
   candidateCells,
   cells,
   budget,
-  weights,
-  enabledLayers,
   {
     onProgress,
     includeTrace = false,
@@ -64,7 +61,7 @@ export function generateGreedyLocalSolution(
     x: cell.x,
     y: cell.y,
     housingCostIndex: cell.housingCostIndex,
-    score: Math.max(0, scoreCell(cell, weights, enabledLayers)),
+    score: 1,
   }));
   const baselineDemand = getDemandState(cells);
   const demandCells = cells
@@ -72,7 +69,7 @@ export function generateGreedyLocalSolution(
     .map((cell) => ({
       x: cell.x,
       y: cell.y,
-      score: Math.max(0, scoreCell(cell, weights, enabledLayers)),
+      score: 100,
       population: baselineDemand.residual[cell.y * GRID_COLS + cell.x],
     }));
 
@@ -105,15 +102,11 @@ export function generateGreedyDemonstration(
   candidateCells,
   cells,
   budget,
-  weights,
-  enabledLayers,
 ) {
   return generateGreedyLocalSolution(
     candidateCells,
     cells,
     budget,
-    weights,
-    enabledLayers,
     { includeTrace: true, greedyOnly: true },
   );
 }

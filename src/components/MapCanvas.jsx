@@ -23,8 +23,8 @@ import { toPng } from "html-to-image";
 import { GreedyDemoPanel } from "./GreedyDemoPanel";
 import { useDemoRecording } from "../hooks/useDemoRecording";
 import {
-  getCellDemand,
-  getDemandAdjustedScore,
+  formatLayerValue,
+  getLayerIntensity,
   GRID_COLS,
   GRID_ROWS,
   MAP_EXISTING_SHELTERS,
@@ -49,11 +49,10 @@ const DEMO_TARGET_CELL_PX = 56;
 const DEMO_INTRO_CELL_PX = 34;
 const MAX_MAP_SCALE = 48;
 const DEMO_INTRO_VIEWS = [
-  { mode: "base", layer: "heat", label: "Base map" },
+  { mode: "base", layer: "demand", label: "Base map" },
+  { mode: "single", layer: "demand", label: "Population demand" },
+  { mode: "single", layer: "cost", label: "Regional cost" },
   { mode: "single", layer: "heat", label: "Heat exposure" },
-  { mode: "single", layer: "vulnerable", label: "Vulnerable population" },
-  { mode: "single", layer: "flow", label: "Pedestrian flow" },
-  { mode: "composite", layer: "heat", label: "Composite" },
 ];
 
 const FACILITY_ICONS = {
@@ -93,8 +92,6 @@ const getBaseColor = (cell) => {
 export function MapCanvas({
   cells,
   layers,
-  weights,
-  enabled,
   mode,
   activeLayer,
   candidates,
@@ -214,8 +211,9 @@ export function MapCanvas({
     viewRows,
     viewBounds,
     scoreCells,
-    weights,
-    enabled,
+    mode: renderedMode,
+    activeLayer: renderedActiveLayer,
+    demandState,
     placed,
     visibleCandidates,
     candidateIndex,
@@ -248,9 +246,6 @@ export function MapCanvas({
   const hoveredInView = hovered && (!activeSubzone || hovered.subzoneCode === activeSubzone.code)
     ? hovered
     : null;
-  const hoveredScore = hoveredInView
-    ? getDemandAdjustedScore(hoveredInView, demandState, weights, enabled)
-    : 0;
   const hoveredSubzoneBoundaryPath = useMemo(() => {
     if (activeSubzone || !hoveredSubzoneCode) return "";
 
@@ -346,11 +341,9 @@ export function MapCanvas({
     const scaledMapHeight = surfaceSize.height * transform.scale;
     const screenCellWidth = scaledMapWidth / viewColumns;
     const screenCellHeight = scaledMapHeight / viewRows;
-    if (Math.min(screenCellWidth, screenCellHeight) < SCORE_LABEL_MIN_CELL_PX) {
-      if (scoreViewportKeyRef.current) {
-        scoreViewportKeyRef.current = "";
-        setScoreCells([]);
-      }
+    if (renderedMode !== "single" || Math.min(screenCellWidth, screenCellHeight) < SCORE_LABEL_MIN_CELL_PX) {
+      scoreViewportKeyRef.current = "";
+      setScoreCells((current) => current.length ? [] : current);
       return;
     }
 
@@ -361,7 +354,7 @@ export function MapCanvas({
     const maxLocalX = clamp(Math.ceil((shellWidth - transform.positionX) / screenCellWidth) + 1, 0, viewColumns - 1);
     const minLocalY = clamp(Math.floor((-transform.positionY) / screenCellHeight) - 1, 0, viewRows - 1);
     const maxLocalY = clamp(Math.ceil((shellHeight - transform.positionY) / screenCellHeight) + 1, 0, viewRows - 1);
-    const nextKey = `${activeSubzoneCode ?? "queenstown"}:${minLocalX}:${maxLocalX}:${minLocalY}:${maxLocalY}`;
+    const nextKey = `${activeSubzoneCode ?? "queenstown"}:${renderedActiveLayer}:${minLocalX}:${maxLocalX}:${minLocalY}:${maxLocalY}`;
     if (nextKey === scoreViewportKeyRef.current) return;
 
     const nextCells = [];
@@ -410,7 +403,13 @@ export function MapCanvas({
 
   useLayoutEffect(() => {
     syncMapOverlay();
-  }, [mapSurfaceSize, activeSubzoneCode, hoveredInView, hoveredSubzoneCode, isCellDetail, scoreCells, visibleCandidates, visibleExistingShelters]);
+  }, [mapSurfaceSize, activeSubzoneCode, hoveredInView, hoveredSubzoneCode, isCellDetail, renderedActiveLayer, renderedMode, scoreCells, visibleCandidates, visibleExistingShelters]);
+
+  useEffect(() => {
+    scoreViewportKeyRef.current = "";
+    if (renderedMode === "single") syncScoreViewport();
+    else setScoreCells((current) => current.length ? [] : current);
+  }, [renderedActiveLayer, renderedMode]);
 
   useEffect(() => {
     if (greedyDemo.phase !== "intro") {
@@ -608,42 +607,17 @@ export function MapCanvas({
     canvas.height = viewRows;
     const context = canvas.getContext("2d", { alpha: true });
     const image = context.createImageData(viewColumns, viewRows);
-    const visibleLayers = renderedMode === "base"
-      ? []
-      : renderedMode === "single"
-        ? layers.filter((layer) => layer.id === renderedActiveLayer)
-        : layers;
-    const maxCompositeWeight = Math.max(
-      0,
-      ...visibleLayers
-        .filter((layer) => enabled[layer.id])
-        .map((layer) => weights[layer.id]),
-    );
+    const activeDefinition = layers.find((layer) => layer.id === renderedActiveLayer);
 
     for (const cell of viewCells) {
       let color = getBaseColor(cell);
-      const demand = getCellDemand(cell, demandState);
-      const demandRatio = demand.initial > 0
-        ? Math.min(1, demand.remaining / demand.initial)
-        : 1;
-
-      for (const layer of visibleLayers) {
-        if (!enabled[layer.id]) continue;
-        const intensity = cell[layer.id];
-        const opacity = renderedMode === "single"
-          ? Math.min(0.74, 0.08 + intensity * 0.66)
-          : maxCompositeWeight > 0 && weights[layer.id] > 0
-            ? Math.min(
-                0.36,
-                (0.04 + intensity * 0.28) *
-                  (0.55 + 0.45 * (weights[layer.id] / maxCompositeWeight)),
-              )
-            : 0;
-        color = blend(color, hexToRgb(layer.color), opacity);
-      }
-
-      if (demandRatio < 1) {
-        color = blend(color, [244, 255, 249], (1 - demandRatio) * 0.78);
+      if (renderedMode === "single" && activeDefinition) {
+        const intensity = getLayerIntensity(cell, renderedActiveLayer, demandState);
+        color = blend(
+          color,
+          hexToRgb(activeDefinition.color),
+          intensity <= 0 ? 0 : Math.min(0.78, 0.08 + intensity * 0.7),
+        );
       }
 
       const localX = cell.x - viewBounds.minX;
@@ -656,7 +630,7 @@ export function MapCanvas({
     }
 
     context.putImageData(image, 0, 0);
-  }, [demandState, enabled, layers, renderedActiveLayer, renderedMode, viewBounds.minX, viewBounds.minY, viewCells, viewColumns, viewRows, weights]);
+  }, [demandState, layers, renderedActiveLayer, renderedMode, viewBounds.minX, viewBounds.minY, viewCells, viewColumns, viewRows]);
 
   const cellFromPointer = (event) => {
     const bounds = event.currentTarget.getBoundingClientRect();
@@ -715,14 +689,17 @@ export function MapCanvas({
     <main className="map-workspace">
       <div className="map-toolbar">
         <div className="segmented-control" aria-label="Map view mode">
-          <button className={renderedMode === "composite" ? "is-selected" : ""} disabled={demoIntro.active} onClick={() => onMode("composite")} type="button">Composite</button>
-          <button className={renderedMode === "single" ? "is-selected" : ""} disabled={demoIntro.active} onClick={() => onMode("single")} type="button">Single layer</button>
           <button className={renderedMode === "base" ? "is-selected" : ""} disabled={demoIntro.active} onClick={() => onMode("base")} type="button">Base map</button>
+          <button className={renderedMode === "single" ? "is-selected" : ""} disabled={demoIntro.active} onClick={() => onMode("single")} type="button">Single layer</button>
         </div>
 
         <div className="map-toolbar-meta">
-          <div className="map-legend" aria-label="Score intensity legend">
-            <span>{introView?.label ?? (renderedMode === "single" ? layers.find((layer) => layer.id === renderedActiveLayer)?.label : "Layer intensity")}</span>
+          <div
+            className={`map-legend ${renderedMode === "base" ? "is-hidden" : ""}`}
+            aria-label="Layer intensity legend"
+            style={{ "--legend-color": layers.find((layer) => layer.id === renderedActiveLayer)?.color }}
+          >
+            <span>{introView?.label ?? layers.find((layer) => layer.id === renderedActiveLayer)?.label}</span>
             <div className="legend-steps">
               {[0.16, 0.3, 0.44, 0.58, 0.72].map((opacity) => <i key={opacity} style={{ opacity }} />)}
             </div>
@@ -855,13 +832,11 @@ export function MapCanvas({
                   )}
 
                   {scoreCells.map((cell) => {
-                    const score = cell.water || cell.outside
-                      ? 0
-                      : getDemandAdjustedScore(cell, demandState, weights, enabled);
+                    const value = formatLayerValue(cell, renderedActiveLayer, demandState, true);
                     const isDemoTarget = currentGreedyStep?.station.id === cell.id;
                     return (
                       <span
-                        className={`map-cell-score ${score <= 0 ? "is-zero" : ""} ${isDemoTarget ? "is-demo-target" : ""} ${isDemoTarget && greedyDemo.phase === "applied" ? "is-changing" : ""}`}
+                        className={`map-cell-score ${getLayerIntensity(cell, renderedActiveLayer, demandState) <= 0 ? "is-zero" : ""} ${isDemoTarget ? "is-demo-target" : ""} ${isDemoTarget && greedyDemo.phase === "applied" ? "is-changing" : ""}`}
                         data-testid="map-cell-score"
                         data-map-cell="true"
                         data-map-x={cell.x}
@@ -869,7 +844,7 @@ export function MapCanvas({
                         key={cell.id}
                         aria-hidden="true"
                       >
-                        {score}
+                        {value}
                       </span>
                     );
                   })}
@@ -966,18 +941,19 @@ export function MapCanvas({
 
         {hoveredInView && (
           <div className="hover-readout" data-export-ignore="true" data-testid="cell-score-readout">
-            <div className={`hover-score ${hoveredScore < 0 ? "is-negative" : ""}`}>
-              <span>Composite score</span>
-              <strong>{hoveredScore}</strong>
-            </div>
             <strong>{hoveredInView.zone}</strong>
             <span>Cell {hoveredInView.x + 1}, {hoveredInView.y + 1} · {hoveredInView.buildable ? "Buildable" : "Unavailable"}</span>
-            <small>
-              H {Math.round(hoveredInView.heat * 100)} · V {Math.round(hoveredInView.vulnerable * 100)} · F {Math.round(hoveredInView.flow * 100)}
-            </small>
-            <small>
-              Demand {Math.round(getCellDemand(hoveredInView, demandState).remaining).toLocaleString()} / {Math.round(getCellDemand(hoveredInView, demandState).initial).toLocaleString()}
-            </small>
+            <dl className="hover-layer-values">
+              {(renderedMode === "single"
+                ? layers.filter((layer) => layer.id === renderedActiveLayer)
+                : layers
+              ).map((layer) => (
+                <div key={layer.id}>
+                  <dt><i style={{ backgroundColor: layer.color }} />{layer.label}</dt>
+                  <dd>{formatLayerValue(hoveredInView, layer.id, demandState)}</dd>
+                </div>
+              ))}
+            </dl>
           </div>
         )}
       </div>
@@ -1000,7 +976,7 @@ export function MapCanvas({
               />
               <span>
                 <strong>Include map tour intro</strong>
-                <small>Left-to-right score and layer overview</small>
+                <small>Left-to-right data-layer overview</small>
               </span>
             </label>
             <div className="demo-video-dialog-actions">

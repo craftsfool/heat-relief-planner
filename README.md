@@ -4,28 +4,27 @@ Long-pressing **New game** traverses every buildable cell and all five shelter
 radii on the current map. It builds a full-map greedy/local-search plan, then
 runs capacity-aware branch-and-bound refinement over the strongest locations
 discovered during traversal. The objective is lexicographic: maximize
-population-weighted priority reduction, then population served, then minimize
-cost.
+population served, then minimize cost.
 
 An interactive pixel-grid planning tool for exploring heat-relief station placement in Queenstown, Singapore.
 
-The base grid uses the URA Master Plan 2019 planning-area boundary and OpenStreetMap features. Population is allocated from official Census 2020 MP2019-subzone totals, and housing cost is interpolated from recent official HDB resale transactions. Heat exposure and pedestrian flow remain modelling proxies.
+The base grid uses the URA Master Plan 2019 planning-area boundary and OpenStreetMap features. Population is allocated from official Census 2020 MP2019-subzone totals, and housing cost is interpolated from recent official HDB resale transactions. Heat exposure remains a modelling proxy.
 
 ## Features
 
 - 370 x 353 GIS-derived grid with 20 m cells and subzone views
-- Composite and single-factor map views
+- Base-map and mutually exclusive single-layer views
 - Zoom, pan, and responsive mobile layout
-- Budget-based station placement scored by population-weighted priority reduction
+- Budget-based station placement scored by population served
 - 383 mapped existing cooling facilities, including convenience stores, supermarkets, cafes, libraries, community facilities, and malls
 - Capacity-constrained service allocation from the centre cell through successive Manhattan-distance rings
 - Residual population demand that cannot be served twice by overlapping shelters
 - Cell-specific construction costs based on the local HDB resale-price index
 - Greedy construction with local-search improvements for optimized strategies
-- Replayable greedy-decision animation with compact parameters, score-labelled close-ups, and map-overview intervals
-- Automatic map demo recording with a scored six-layer map tour, synchronized decision parameters, optional intro-free export, and shelter-selection audio cues
+- Replayable greedy-decision animation with compact parameters, data-labelled close-ups, and map-overview intervals
+- Automatic map demo recording with a four-stage data-layer tour, synchronized decision parameters, optional intro-free export, and shelter-selection audio cues
 - Existing shelters reduce population demand before player construction begins
-- Candidate ranking and site-level score breakdowns
+- Candidate ranking by expected people served per construction dollar
 
 ## Run locally
 

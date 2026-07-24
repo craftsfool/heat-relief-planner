@@ -5,7 +5,6 @@ import {
   STATION_RADII,
   STATION_CAPACITY_BY_RADIUS,
   getDemandState,
-  scoreCell,
 } from "./cityModel";
 
 let exactWorker;
@@ -39,8 +38,6 @@ export function generateExactOptimalSolution(
   candidateCells,
   cells,
   budget,
-  weights,
-  enabledLayers,
   { onProgress } = {},
 ) {
   const id = nextRequestId;
@@ -57,7 +54,7 @@ export function generateExactOptimalSolution(
     .map((cell) => ({
       x: cell.x,
       y: cell.y,
-      score: Math.max(0, scoreCell(cell, weights, enabledLayers)),
+      score: 100,
       population: baselineDemand.residual[cell.y * GRID_COLS + cell.x],
     }));
 

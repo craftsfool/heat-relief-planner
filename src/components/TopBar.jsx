@@ -10,7 +10,7 @@ export function TopBar({
   onTimeChange,
   budget,
   placedCount,
-  gameScore,
+  peopleReached,
   candidateCount,
   onClear,
   onNewChallenge,
@@ -41,7 +41,7 @@ export function TopBar({
           <span>Scenario</span>
           <select value={scenario} onChange={(event) => onScenarioChange(event.target.value)}>
             <option value="baseline">Baseline 2026</option>
-            <option value="high-growth">High footfall</option>
+            <option value="high-growth">High demand</option>
             <option value="heatwave">Heatwave day</option>
           </select>
         </label>
@@ -62,8 +62,8 @@ export function TopBar({
           <strong>${budget.toLocaleString()}</strong>
         </div>
         <div>
-          <span>Priority reduced</span>
-          <strong>{gameScore.toLocaleString()} pts · {placedCount} stations</strong>
+          <span>People reached</span>
+          <strong>{peopleReached.toLocaleString()} · {placedCount} stations</strong>
         </div>
         <button className="icon-button topbar-icon-button" type="button" title="Clear current plan" aria-label="Clear current plan" onClick={onClear}>
           <RotateCcw size={16} />
