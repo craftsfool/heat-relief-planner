@@ -418,6 +418,21 @@ button { color: inherit; }
   stroke-linejoin: round;
   filter: drop-shadow(0 0 1px #fff) drop-shadow(0 0 4px rgba(22, 119, 232, .95));
 }
+.station-coverage {
+  position: absolute;
+  z-index: 12;
+  box-sizing: border-box;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  background: rgba(24, 174, 122, .16);
+  border: 2px solid rgba(10, 128, 88, .78);
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .28);
+}
+.station-coverage.is-selected {
+  background: rgba(24, 174, 122, .22);
+  border-color: #087c56;
+}
 .existing-shelter-marker {
   width: clamp(9px, calc(var(--screen-cell-size) * .72), 24px);
   height: clamp(9px, calc(var(--screen-cell-size) * .72), 24px);

@@ -23,6 +23,7 @@ import { toPng } from "html-to-image";
 import { GreedyDemoPanel } from "./GreedyDemoPanel";
 import { useDemoRecording } from "../hooks/useDemoRecording";
 import {
+  CELL_SIZE_METRES,
   formatLayerValue,
   getLayerIntensity,
   GRID_COLS,
@@ -199,6 +200,11 @@ export function MapCanvas({
       viewCellByCoordinate.has(`${shelter.x}-${shelter.y}`)),
     [viewCellByCoordinate],
   );
+  const visiblePlacedStations = useMemo(
+    () => placed.filter((station) =>
+      viewCellByCoordinate.has(`${station.x}-${station.y}`)),
+    [placed, viewCellByCoordinate],
+  );
   const candidateIndex = useMemo(
     () => new Map(candidates.map((candidate, index) => [candidate.id, index + 1])),
     [candidates],
@@ -318,6 +324,13 @@ export function MapCanvas({
 
     overlay.querySelectorAll("[data-map-x][data-map-y]").forEach((element) => {
       const rect = cellRect(Number(element.dataset.mapX), Number(element.dataset.mapY));
+      if (element.dataset.mapRadius) {
+        const diameter = (
+          (Number(element.dataset.mapRadius) * 2) / CELL_SIZE_METRES
+        ) * screenCellSize;
+        element.style.width = `${diameter}px`;
+        element.style.height = `${diameter}px`;
+      }
       if (element.dataset.mapCell === "true") {
         element.style.left = `${rect.left}px`;
         element.style.top = `${rect.top}px`;
@@ -403,7 +416,7 @@ export function MapCanvas({
 
   useLayoutEffect(() => {
     syncMapOverlay();
-  }, [mapSurfaceSize, activeSubzoneCode, hoveredInView, hoveredSubzoneCode, isCellDetail, renderedActiveLayer, renderedMode, scoreCells, visibleCandidates, visibleExistingShelters]);
+  }, [mapSurfaceSize, activeSubzoneCode, hoveredInView, hoveredSubzoneCode, isCellDetail, renderedActiveLayer, renderedMode, scoreCells, visibleCandidates, visibleExistingShelters, visiblePlacedStations]);
 
   useEffect(() => {
     scoreViewportKeyRef.current = "";
@@ -830,6 +843,17 @@ export function MapCanvas({
                       data-map-y={hoveredInView.y}
                     />
                   )}
+
+                  {visiblePlacedStations.map((station) => (
+                    <span
+                      className={`station-coverage ${selected?.id === station.id ? "is-selected" : ""}`}
+                      data-map-x={station.x}
+                      data-map-y={station.y}
+                      data-map-radius={station.radius}
+                      key={`coverage-${station.id}`}
+                      aria-hidden="true"
+                    />
+                  ))}
 
                   {scoreCells.map((cell) => {
                     const value = formatLayerValue(cell, renderedActiveLayer, demandState, true);

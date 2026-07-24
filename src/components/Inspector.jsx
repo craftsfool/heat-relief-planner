@@ -79,11 +79,14 @@ export function Inspector({
         <input
           type="range"
           min="100"
-          max={isPlaced ? maxAffordableRadius : 300}
+          max="300"
           step="50"
           value={radius}
           title="Adjust service radius"
-          onChange={(event) => onRadius(Number(event.target.value))}
+          onChange={(event) => onRadius(Math.min(
+            isPlaced ? maxAffordableRadius : 300,
+            Number(event.target.value),
+          ))}
         />
         <div className="range-labels"><span>100 m</span><span>200 m</span><span>300 m</span></div>
       </section>
