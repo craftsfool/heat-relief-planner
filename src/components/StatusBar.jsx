@@ -8,17 +8,27 @@ export function StatusBar({
   candidateRank,
   candidateCount,
   budgetLocked,
+  allCandidatesPlaced,
+  demandExhausted,
   gridColumns,
   gridRows,
   gridCellCount,
   cellSizeMetres,
 }) {
+  const remainingStatus = demandExhausted
+    ? "demand covered"
+    : allCandidatesPlaced
+      ? "all sites used"
+      : budgetLocked
+        ? "budget locked"
+        : `${placedCount} placed`;
+
   return (
     <footer className="statusbar">
       <div><Grid3X3 size={18} /><span>Grid</span><strong>{gridColumns} x {gridRows} · {gridCellCount.toLocaleString()} mapped · {cellSizeMetres} m</strong></div>
       <div><Crosshair size={18} /><span>Candidate</span><strong>{selected ? `#${candidateRank} of ${candidateCount} · ${selected.zone}` : "None"}</strong></div>
       <div><Users size={18} /><span>People reached</span><strong>{populationScore.toLocaleString()} people reached</strong></div>
-      <div><CircleDollarSign size={18} /><span>Remaining</span><strong>${budget.toLocaleString()} · {budgetLocked ? "budget locked" : `${placedCount} placed`}</strong></div>
+      <div><CircleDollarSign size={18} /><span>Remaining</span><strong>${budget.toLocaleString()} · {remainingStatus}</strong></div>
     </footer>
   );
 }

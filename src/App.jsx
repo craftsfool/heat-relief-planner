@@ -119,11 +119,14 @@ export default function App() {
     [placed, planningCells],
   );
   const placedIds = useMemo(() => new Set(placed.map((station) => station.id)), [placed]);
+  const hasUnplacedCandidates = visibleCandidates.some((candidate) => !placedIds.has(candidate.id));
+  const allCandidatesPlaced = visibleCandidates.length > 0 && !hasUnplacedCandidates;
   const cheapestRemainingCost = visibleCandidates.reduce((minimum, candidate) => {
     if (placedIds.has(candidate.id)) return minimum;
     return Math.min(minimum, getCellMetrics(candidate, STATION_CAPACITIES[0], planningCells).cost);
   }, Number.POSITIVE_INFINITY);
-  const budgetLocked = visibleCandidates.length > 0 && budget < cheapestRemainingCost;
+  const budgetLocked = hasUnplacedCandidates && budget < cheapestRemainingCost;
+  const demandExhausted = demandState.remainingDemand < 0.5;
   const maxAffordableCapacity = selected
     ? STATION_CAPACITIES.filter((option) => {
         const optionCost = getCellMetrics(selected, option, planningCells).cost;
@@ -506,6 +509,8 @@ export default function App() {
         candidateRank={candidateRank}
         candidateCount={visibleCandidates.length}
         budgetLocked={budgetLocked}
+        allCandidatesPlaced={allCandidatesPlaced}
+        demandExhausted={demandExhausted}
         gridColumns={activeSubzone ? activeSubzone.bounds.maxX - activeSubzone.bounds.minX + 1 : GRID_COLS}
         gridRows={activeSubzone ? activeSubzone.bounds.maxY - activeSubzone.bounds.minY + 1 : GRID_ROWS}
         gridCellCount={planningCells.length}
