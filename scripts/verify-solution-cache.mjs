@@ -58,6 +58,11 @@ for (const subzoneCode of scopes) {
       true,
     );
   }
+  if (!subzoneCode) {
+    assert.equal(record.stats.population, 26_000);
+    assert.equal(record.stats.capacityUpperBound, 26_000);
+    assert.equal(record.stats.globallyOptimal, true);
+  }
   verified += 1;
 }
 
