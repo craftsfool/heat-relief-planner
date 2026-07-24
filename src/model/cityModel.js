@@ -6,7 +6,7 @@ export const CELL_SIZE_METRES = queenstownGrid.metadata.cellSizeMetres;
 export const MAP_METADATA = queenstownGrid.metadata;
 export const MAP_SUBZONES = queenstownGrid.subzones;
 export const MAP_EXISTING_SHELTERS = queenstownGrid.existingShelters ?? [];
-export const DEMAND_DISPLAY_RADIUS_METRES = 100;
+export const DEMAND_DENSITY_BANDWIDTH_METRES = 160;
 export const STATION_RADII = [100, 150, 200, 250, 300];
 export const STATION_CAPACITY_BY_RADIUS = {
   100: 500,
@@ -29,7 +29,7 @@ export const LAYER_DEFINITIONS = [
     label: "Population demand",
     shortLabel: "Demand",
     color: "#16a085",
-    description: "Remaining demand within 100 m of each cell.",
+    description: "Smoothed remaining demand density (people/ha).",
   },
   {
     id: "cost",
@@ -149,6 +149,7 @@ export function buildCity(time = "afternoon", scenario = "baseline") {
 const demandBaselineCache = new WeakMap();
 const demandLayerCache = new WeakMap();
 const ringOffsetCache = new Map();
+const CELL_AREA_HECTARES = (CELL_SIZE_METRES * CELL_SIZE_METRES) / 10_000;
 
 const getRingOffsets = (radius) => {
   if (ringOffsetCache.has(radius)) return ringOffsetCache.get(radius);
@@ -169,22 +170,45 @@ const demandLayerSurfaceFor = (demandState) => {
   let cached = demandLayerCache.get(demandState);
   if (cached) return cached;
 
-  const offsets = getRingOffsets(DEMAND_DISPLAY_RADIUS_METRES).flat();
+  const sigmaCells = DEMAND_DENSITY_BANDWIDTH_METRES / CELL_SIZE_METRES;
+  const kernelRadius = Math.ceil(sigmaCells * 3);
+  const kernel = [];
+  let kernelSum = 0;
+  for (let offset = -kernelRadius; offset <= kernelRadius; offset += 1) {
+    const weight = Math.exp(-0.5 * (offset / sigmaCells) ** 2);
+    kernel.push(weight);
+    kernelSum += weight;
+  }
+  for (let index = 0; index < kernel.length; index += 1) kernel[index] /= kernelSum;
+
+  const horizontal = new Float64Array(GRID_COLS * GRID_ROWS);
   const values = new Float64Array(GRID_COLS * GRID_ROWS);
+  for (let y = 0; y < GRID_ROWS; y += 1) {
+    for (let x = 0; x < GRID_COLS; x += 1) {
+      let smoothed = 0;
+      for (let offset = -kernelRadius; offset <= kernelRadius; offset += 1) {
+        const sampleX = x + offset;
+        if (sampleX < 0 || sampleX >= GRID_COLS) continue;
+        smoothed += demandState.residual[y * GRID_COLS + sampleX] * kernel[offset + kernelRadius];
+      }
+      horizontal[y * GRID_COLS + x] = smoothed;
+    }
+  }
+
   let maximum = 0;
   for (let y = 0; y < GRID_ROWS; y += 1) {
     for (let x = 0; x < GRID_COLS; x += 1) {
       const index = y * GRID_COLS + x;
       if (!demandState.available[index]) continue;
-      let localDemand = 0;
-      for (const offset of offsets) {
-        const sampleX = x + offset.x;
-        const sampleY = y + offset.y;
-        if (sampleX < 0 || sampleX >= GRID_COLS || sampleY < 0 || sampleY >= GRID_ROWS) continue;
-        localDemand += demandState.residual[sampleY * GRID_COLS + sampleX] ?? 0;
+      let smoothed = 0;
+      for (let offset = -kernelRadius; offset <= kernelRadius; offset += 1) {
+        const sampleY = y + offset;
+        if (sampleY < 0 || sampleY >= GRID_ROWS) continue;
+        smoothed += horizontal[sampleY * GRID_COLS + x] * kernel[offset + kernelRadius];
       }
-      values[index] = localDemand;
-      maximum = Math.max(maximum, localDemand);
+      const densityPerHectare = smoothed / CELL_AREA_HECTARES;
+      values[index] = densityPerHectare;
+      maximum = Math.max(maximum, densityPerHectare);
     }
   }
   cached = { values, maximum: Math.max(1, maximum) };
@@ -325,8 +349,8 @@ export function getLayerIntensity(cell, layerId, demandState) {
 export function formatLayerValue(cell, layerId, demandState, compact = false) {
   const value = getLayerValue(cell, layerId, demandState);
   if (layerId === "demand") {
-    const people = Math.round(value).toLocaleString();
-    return compact ? people : `${people} people / 100 m`;
+    const density = Math.round(value).toLocaleString();
+    return compact ? density : `${density} people / ha`;
   }
   if (layerId === "cost") {
     return compact

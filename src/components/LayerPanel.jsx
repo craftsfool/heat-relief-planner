@@ -52,7 +52,7 @@ export function LayerPanel({ layers, candidateCount, activeLayer, mode, onCandid
             </button>
           </header>
           <dl>
-            <div><dt>Population demand</dt><dd>Remaining people within 100 m after existing and newly placed shelters serve nearby cells.</dd></div>
+            <div><dt>Population demand</dt><dd>Smoothed residual demand density after existing and newly placed shelters serve nearby cells.</dd></div>
             <div><dt>Regional cost</dt><dd>The HDB price proxy scales construction cost at each candidate cell.</dd></div>
             <div><dt>Heat exposure</dt><dd>A separate scenario layer; it is not mixed into the optimisation objective.</dd></div>
           </dl>
