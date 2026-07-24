@@ -2,7 +2,7 @@ import { Check, CircleDollarSign, Flame, MapPin, Minus, Plus, Trash2, Users } fr
 
 export function Inspector({
   cell,
-  demand,
+  localDemand,
   radius,
   metrics,
   budget,
@@ -45,7 +45,7 @@ export function Inspector({
       <section className="site-data-section">
         <h3>Cell data</h3>
         <dl>
-          <div><dt><Users size={14} /> Population demand</dt><dd>{Math.round(demand.remaining).toLocaleString()} people</dd></div>
+          <div><dt><Users size={14} /> Population demand</dt><dd>{Math.round(localDemand).toLocaleString()} people / 100 m</dd></div>
           <div><dt><CircleDollarSign size={14} /> Regional cost</dt><dd>${cell.housingPricePsm.toLocaleString()} / m²</dd></div>
           <div><dt><Flame size={14} /> Heat exposure</dt><dd>{Math.round(cell.heat * 100)}%</dd></div>
         </dl>

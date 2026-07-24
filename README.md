@@ -19,6 +19,7 @@ The base grid uses the URA Master Plan 2019 planning-area boundary and OpenStree
 - 383 mapped existing cooling facilities, including convenience stores, supermarkets, cafes, libraries, community facilities, and malls
 - Capacity-constrained service allocation from the centre cell through successive Manhattan-distance rings
 - Residual population demand that cannot be served twice by overlapping shelters
+- Population-demand map values aggregated within 100 m for legible 20 m-grid comparisons
 - Cell-specific construction costs based on the local HDB resale-price index
 - Greedy construction with local-search improvements for optimized strategies
 - Replayable greedy-decision animation with compact parameters, data-labelled close-ups, and map-overview intervals

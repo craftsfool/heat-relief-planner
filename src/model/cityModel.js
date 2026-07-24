@@ -6,6 +6,7 @@ export const CELL_SIZE_METRES = queenstownGrid.metadata.cellSizeMetres;
 export const MAP_METADATA = queenstownGrid.metadata;
 export const MAP_SUBZONES = queenstownGrid.subzones;
 export const MAP_EXISTING_SHELTERS = queenstownGrid.existingShelters ?? [];
+export const DEMAND_DISPLAY_RADIUS_METRES = 100;
 export const STATION_RADII = [100, 150, 200, 250, 300];
 export const STATION_CAPACITY_BY_RADIUS = {
   100: 500,
@@ -28,7 +29,7 @@ export const LAYER_DEFINITIONS = [
     label: "Population demand",
     shortLabel: "Demand",
     color: "#16a085",
-    description: "People still needing access to cooling.",
+    description: "Remaining demand within 100 m of each cell.",
   },
   {
     id: "cost",
@@ -146,6 +147,7 @@ export function buildCity(time = "afternoon", scenario = "baseline") {
 }
 
 const demandBaselineCache = new WeakMap();
+const demandLayerCache = new WeakMap();
 const ringOffsetCache = new Map();
 
 const getRingOffsets = (radius) => {
@@ -160,6 +162,34 @@ const getRingOffsets = (radius) => {
   }
   ringOffsetCache.set(radius, rings);
   return rings;
+};
+
+const demandLayerSurfaceFor = (demandState) => {
+  if (!demandState) return { values: new Float64Array(GRID_COLS * GRID_ROWS), maximum: 1 };
+  let cached = demandLayerCache.get(demandState);
+  if (cached) return cached;
+
+  const offsets = getRingOffsets(DEMAND_DISPLAY_RADIUS_METRES).flat();
+  const values = new Float64Array(GRID_COLS * GRID_ROWS);
+  let maximum = 0;
+  for (let y = 0; y < GRID_ROWS; y += 1) {
+    for (let x = 0; x < GRID_COLS; x += 1) {
+      const index = y * GRID_COLS + x;
+      if (!demandState.available[index]) continue;
+      let localDemand = 0;
+      for (const offset of offsets) {
+        const sampleX = x + offset.x;
+        const sampleY = y + offset.y;
+        if (sampleX < 0 || sampleX >= GRID_COLS || sampleY < 0 || sampleY >= GRID_ROWS) continue;
+        localDemand += demandState.residual[sampleY * GRID_COLS + sampleX] ?? 0;
+      }
+      values[index] = localDemand;
+      maximum = Math.max(maximum, localDemand);
+    }
+  }
+  cached = { values, maximum: Math.max(1, maximum) };
+  demandLayerCache.set(demandState, cached);
+  return cached;
 };
 
 const stationCapacity = (station) =>
@@ -271,7 +301,9 @@ export function getCellDemand(cell, demandState) {
 
 export function getLayerValue(cell, layerId, demandState) {
   if (!cell || cell.outside || cell.water) return 0;
-  if (layerId === "demand") return getCellDemand(cell, demandState).remaining;
+  if (layerId === "demand") {
+    return demandLayerSurfaceFor(demandState).values[cell.y * GRID_COLS + cell.x] ?? 0;
+  }
   if (layerId === "cost") return cell.housingPricePsm ?? 0;
   if (layerId === "heat") return clamp(cell.heat) * 100;
   return 0;
@@ -280,7 +312,7 @@ export function getLayerValue(cell, layerId, demandState) {
 export function getLayerIntensity(cell, layerId, demandState) {
   const value = getLayerValue(cell, layerId, demandState);
   if (layerId === "demand") {
-    const maximum = Math.max(1, demandState?.maxRemainingDemand ?? value);
+    const maximum = demandLayerSurfaceFor(demandState).maximum;
     return clamp(Math.sqrt(value / maximum));
   }
   if (layerId === "cost") {
@@ -292,7 +324,10 @@ export function getLayerIntensity(cell, layerId, demandState) {
 
 export function formatLayerValue(cell, layerId, demandState, compact = false) {
   const value = getLayerValue(cell, layerId, demandState);
-  if (layerId === "demand") return Math.round(value).toLocaleString();
+  if (layerId === "demand") {
+    const people = Math.round(value).toLocaleString();
+    return compact ? people : `${people} people / 100 m`;
+  }
   if (layerId === "cost") {
     return compact
       ? `$${(value / 1000).toFixed(value >= 10_000 ? 0 : 1)}k`

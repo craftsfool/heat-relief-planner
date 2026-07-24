@@ -14,8 +14,8 @@ import {
   buildCity,
   generateRandomSolution,
   getCellMetrics,
-  getCellDemand,
   getDemandState,
+  getLayerValue,
   getPopulationReached,
   rankChallengeSites,
   selectChallengeSites,
@@ -88,9 +88,9 @@ export default function App() {
     () => getDemandState(planningCells, placed),
     [placed, planningCells],
   );
-  const selectedDemand = selected
-    ? getCellDemand(selected, demandState)
-    : { initial: 0, afterExisting: 0, remaining: 0, servedByPlayer: 0 };
+  const selectedLocalDemand = selected
+    ? getLayerValue(selected, "demand", demandState)
+    : 0;
   const metricBaseStations = useMemo(
     () => selectedStation
       ? placed.filter((station) => station.id !== selectedStation.id)
@@ -455,7 +455,7 @@ export default function App() {
         />
         <Inspector
           cell={selected}
-          demand={selectedDemand}
+          localDemand={selectedLocalDemand}
           radius={effectiveRadius}
           metrics={metrics}
           budget={budget}
