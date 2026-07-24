@@ -26,7 +26,7 @@ The base grid uses the URA Master Plan 2019 planning-area boundary and OpenStree
 - Zoom, pan, and responsive mobile layout
 - Budget-based station placement scored by population served
 - 383 mapped existing cooling facilities, including convenience stores, supermarkets, cafes, libraries, community facilities, and malls
-- Capacity-constrained service allocation from the centre cell through successive Manhattan-distance rings
+- Capacity-constrained service allocation through successive straight-line distance rings, with hotter cells served first only within an equal-distance ring
 - Residual population demand that cannot be served twice by overlapping shelters
 - Residual population-demand density smoothed with a 160 m Gaussian bandwidth for legible 20 m-grid comparisons
 - Cell-specific construction costs based on the local HDB resale-price index

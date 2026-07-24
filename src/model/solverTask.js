@@ -10,7 +10,7 @@ import {
   getDemandState,
 } from "./cityModel.js";
 
-export const SOLVER_SCHEMA_VERSION = 1;
+export const SOLVER_SCHEMA_VERSION = 2;
 export const STANDARD_BUDGET = 2_500_000;
 
 const compactDate = (value) => String(value ?? "unknown")
@@ -94,6 +94,7 @@ export function createSolverTask(config = {}) {
       x: cell.x,
       y: cell.y,
       score: 100,
+      heat: cell.heat,
       population: baselineDemand.residual[cell.y * GRID_COLS + cell.x],
     }));
 

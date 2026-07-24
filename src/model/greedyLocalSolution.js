@@ -129,6 +129,7 @@ export function generateGreedyLocalSolution(
       x: cell.x,
       y: cell.y,
       score: 100,
+      heat: cell.heat,
       population: baselineDemand.residual[cell.y * GRID_COLS + cell.x],
     }));
 

@@ -12,62 +12,67 @@ const stationCost = (candidate, radius) =>
 
 const evaluate = (selection, demandCells, columns, rows) => {
   const residual = new Float64Array(columns * rows);
-  const scores = new Float64Array(columns * rows);
+  const heatExposure = new Float32Array(columns * rows);
   for (const cell of demandCells) {
     const index = cell.y * columns + cell.x;
     residual[index] = cell.population;
-    scores[index] = cell.score;
+    heatExposure[index] = cell.heat;
   }
-  let score = 0;
   let population = 0;
   for (const station of selection) {
     let capacity = CAPACITIES[station.radius];
-    const reach = station.radius / 20;
-    for (let ring = 0; ring <= reach && capacity > EPSILON; ring += 1) {
+    const reach = Math.ceil(station.radius / 20);
+    const maximumDistanceSquared = (station.radius / 20) ** 2;
+    const offsetsByDistance = new Map();
+    for (let offsetY = -reach; offsetY <= reach; offsetY += 1) {
+      for (let offsetX = -reach; offsetX <= reach; offsetX += 1) {
+        const distanceSquared = offsetX ** 2 + offsetY ** 2;
+        if (distanceSquared > maximumDistanceSquared) continue;
+        const offsets = offsetsByDistance.get(distanceSquared) ?? [];
+        offsets.push({ offsetX, offsetY });
+        offsetsByDistance.set(distanceSquared, offsets);
+      }
+    }
+    const bands = [...offsetsByDistance.entries()]
+      .sort(([distanceA], [distanceB]) => distanceA - distanceB)
+      .map(([, offsets]) => offsets);
+    for (const band of bands) {
       const cells = [];
-      let ringDemand = 0;
-      for (let offsetY = -ring; offsetY <= ring; offsetY += 1) {
-        for (let offsetX = -ring; offsetX <= ring; offsetX += 1) {
-          if (Math.abs(offsetX) + Math.abs(offsetY) !== ring) continue;
+      for (const { offsetX, offsetY } of band) {
           const x = station.x + offsetX;
           const y = station.y + offsetY;
           if (x < 0 || x >= columns || y < 0 || y >= rows) continue;
           const index = y * columns + x;
           if (residual[index] <= 0) continue;
-          cells.push({ index, demand: residual[index] });
-          ringDemand += residual[index];
-        }
+          cells.push({
+            index,
+            demand: residual[index],
+            heat: heatExposure[index],
+          });
       }
-      if (ringDemand <= 0) continue;
-      const served = Math.min(capacity, ringDemand);
-      const ratio = served / ringDemand;
+      cells.sort((a, b) => b.heat - a.heat || a.index - b.index);
       for (const cell of cells) {
-        const amount = cell.demand * ratio;
+        const amount = Math.min(cell.demand, capacity);
         residual[cell.index] -= amount;
-        score += amount * scores[cell.index] / 100;
+        population += amount;
+        capacity -= amount;
+        if (capacity <= EPSILON) break;
       }
-      population += served;
-      capacity -= served;
+      if (capacity <= EPSILON) break;
     }
   }
   return {
-    score,
+    score: population,
     population,
     spent: selection.reduce((sum, station) => sum + station.cost, 0),
   };
 };
 
 const isBetter = (candidate, incumbent) => (
-  candidate.score > incumbent.score + EPSILON
+  candidate.population > incumbent.population + EPSILON
   || (
-    Math.abs(candidate.score - incumbent.score) <= EPSILON
-    && (
-      candidate.population > incumbent.population + EPSILON
-      || (
-        Math.abs(candidate.population - incumbent.population) <= EPSILON
-        && candidate.spent < incumbent.spent
-      )
-    )
+    Math.abs(candidate.population - incumbent.population) <= EPSILON
+    && candidate.spent < incumbent.spent
   )
 );
 
@@ -121,6 +126,7 @@ const makeCase = (seed) => {
         x,
         y,
         score: Math.round(random() * 80),
+        heat: random(),
         population: Math.round(random() * 35),
       });
     }
@@ -159,4 +165,4 @@ for (const seed of [7, 19, 41, 83, 131]) {
   assert.equal(exactResult.spent, brute.spent, `cost mismatch for seed ${seed}`);
 }
 
-console.log("Capacity-aware exact solver matches brute force on 5 deterministic overlap cases.");
+console.log("Euclidean, heat-tiebroken exact solver matches brute force on 5 deterministic overlap cases.");

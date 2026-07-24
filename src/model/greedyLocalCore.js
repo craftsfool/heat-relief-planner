@@ -6,14 +6,21 @@ const REFINEMENT_POOL_LIMIT = 24;
 const SPATIAL_BLOCK_CELLS = 16;
 
 const buildRings = (radii) => new Map(radii.map((radius) => {
-  const reach = Math.floor(radius / CELL_SIZE_METRES);
-  const rings = Array.from({ length: reach + 1 }, () => []);
+  const reach = Math.ceil(radius / CELL_SIZE_METRES);
+  const maximumDistanceSquared = (radius / CELL_SIZE_METRES) ** 2;
+  const offsetsByDistance = new Map();
   for (let offsetY = -reach; offsetY <= reach; offsetY += 1) {
     for (let offsetX = -reach; offsetX <= reach; offsetX += 1) {
-      const ring = Math.abs(offsetX) + Math.abs(offsetY);
-      if (ring <= reach) rings[ring].push({ x: offsetX, y: offsetY });
+      const distanceSquared = offsetX ** 2 + offsetY ** 2;
+      if (distanceSquared > maximumDistanceSquared) continue;
+      const band = offsetsByDistance.get(distanceSquared) ?? [];
+      band.push({ x: offsetX, y: offsetY });
+      offsetsByDistance.set(distanceSquared, band);
     }
   }
+  const rings = [...offsetsByDistance.entries()]
+    .sort(([distanceA], [distanceB]) => distanceA - distanceB)
+    .map(([, offsets]) => offsets);
   return [radius, rings];
 }));
 
@@ -39,11 +46,11 @@ export function solveGreedyLocal(input, { onProgress } = {}) {
     fullTraversal = false,
   } = input;
   const ringsByRadius = buildRings(radii);
-  const baseScores = new Float32Array(columns * rows);
+  const heatExposure = new Float32Array(columns * rows);
   const initialDemand = new Float64Array(columns * rows);
   for (const cell of demandCells) {
     const index = cell.y * columns + cell.x;
-    baseScores[index] = cell.score;
+    heatExposure[index] = Math.max(0, cell.heat ?? 0);
     initialDemand[index] = Math.max(0, cell.population);
   }
 
@@ -61,18 +68,19 @@ export function solveGreedyLocal(input, { onProgress } = {}) {
         const index = y * columns + x;
         const demand = residualDemand[index];
         if (demand <= 0) continue;
-        ringCells.push({ index, demand });
+        ringCells.push({ index, demand, heat: heatExposure[index] });
         ringDemand += demand;
       }
-      if (ringDemand <= 0) continue;
-      const ringServed = Math.min(remainingCapacity, ringDemand);
-      const ratio = ringServed / ringDemand;
-      for (const item of ringCells) {
-        const amount = item.demand * ratio;
-        gain += amount * baseScores[item.index] / 100;
+      if (ringDemand > remainingCapacity) {
+        ringCells.sort((a, b) => b.heat - a.heat || a.index - b.index);
       }
-      served += ringServed;
-      remainingCapacity -= ringServed;
+      for (const item of ringCells) {
+        const amount = Math.min(item.demand, remainingCapacity);
+        gain += amount;
+        served += amount;
+        remainingCapacity -= amount;
+        if (remainingCapacity <= 1e-6) break;
+      }
       if (remainingCapacity <= 1e-6) break;
     }
     return { gain, served };
@@ -92,19 +100,20 @@ export function solveGreedyLocal(input, { onProgress } = {}) {
         const index = y * columns + x;
         const demand = residualDemand[index];
         if (demand <= 0) continue;
-        ringCells.push({ index, demand });
+        ringCells.push({ index, demand, heat: heatExposure[index] });
         ringDemand += demand;
       }
-      if (ringDemand <= 0) continue;
-      const ringServed = Math.min(remainingCapacity, ringDemand);
-      const ratio = ringServed / ringDemand;
-      for (const item of ringCells) {
-        const amount = item.demand * ratio;
-        residualDemand[item.index] = Math.max(0, residualDemand[item.index] - amount);
-        gain += amount * baseScores[item.index] / 100;
+      if (ringDemand > remainingCapacity) {
+        ringCells.sort((a, b) => b.heat - a.heat || a.index - b.index);
       }
-      served += ringServed;
-      remainingCapacity -= ringServed;
+      for (const item of ringCells) {
+        const amount = Math.min(item.demand, remainingCapacity);
+        residualDemand[item.index] = Math.max(0, residualDemand[item.index] - amount);
+        gain += amount;
+        served += amount;
+        remainingCapacity -= amount;
+        if (remainingCapacity <= 1e-6) break;
+      }
       if (remainingCapacity <= 1e-6) break;
     }
     return { gain, served };

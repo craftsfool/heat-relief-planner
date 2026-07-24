@@ -9,14 +9,21 @@ const buildRings = (radii) => {
   const key = radii.join(",");
   if (ringCache.has(key)) return ringCache.get(key);
   const result = new Map(radii.map((radius) => {
-    const reach = Math.floor(radius / CELL_SIZE_METRES);
-    const rings = Array.from({ length: reach + 1 }, () => []);
+    const reach = Math.ceil(radius / CELL_SIZE_METRES);
+    const maximumDistanceSquared = (radius / CELL_SIZE_METRES) ** 2;
+    const offsetsByDistance = new Map();
     for (let offsetY = -reach; offsetY <= reach; offsetY += 1) {
       for (let offsetX = -reach; offsetX <= reach; offsetX += 1) {
-        const ring = Math.abs(offsetX) + Math.abs(offsetY);
-        if (ring <= reach) rings[ring].push({ x: offsetX, y: offsetY });
+        const distanceSquared = offsetX ** 2 + offsetY ** 2;
+        if (distanceSquared > maximumDistanceSquared) continue;
+        const band = offsetsByDistance.get(distanceSquared) ?? [];
+        band.push({ x: offsetX, y: offsetY });
+        offsetsByDistance.set(distanceSquared, band);
       }
     }
+    const rings = [...offsetsByDistance.entries()]
+      .sort(([distanceA], [distanceB]) => distanceA - distanceB)
+      .map(([, offsets]) => offsets);
     return [radius, rings];
   }));
   ringCache.set(key, result);
@@ -51,11 +58,11 @@ export function solveExactOptimal({
 }) {
   const startedAt = performance.now();
   const gridSize = columns * rows;
-  const scores = new Float64Array(gridSize);
+  const heatExposure = new Float32Array(gridSize);
   const initialDemand = new Float64Array(gridSize);
   for (const cell of demandCells) {
     const index = cell.y * columns + cell.x;
-    scores[index] = Math.max(0, cell.score);
+    heatExposure[index] = Math.max(0, cell.heat ?? 0);
     initialDemand[index] = Math.max(0, cell.population);
   }
   const ringsByRadius = buildRings(radii);
@@ -65,22 +72,15 @@ export function solveExactOptimal({
     let score = 0;
     let population = 0;
     for (const ring of option.rings) {
-      const ringCells = [];
-      let ringDemand = 0;
       for (const index of ring) {
         const demand = residual[index];
         if (demand <= 0) continue;
-        ringCells.push({ index, demand });
-        ringDemand += demand;
+        const amount = Math.min(demand, remainingCapacity);
+        score += amount;
+        population += amount;
+        remainingCapacity -= amount;
+        if (remainingCapacity <= EPSILON) break;
       }
-      if (ringDemand <= 0) continue;
-      const served = Math.min(remainingCapacity, ringDemand);
-      const ratio = served / ringDemand;
-      for (const item of ringCells) {
-        score += item.demand * ratio * scores[item.index] / 100;
-      }
-      population += served;
-      remainingCapacity -= served;
       if (remainingCapacity <= EPSILON) break;
     }
     return { score, population };
@@ -92,25 +92,17 @@ export function solveExactOptimal({
     let population = 0;
     const changes = [];
     for (const ring of option.rings) {
-      const ringCells = [];
-      let ringDemand = 0;
       for (const index of ring) {
         const demand = residual[index];
         if (demand <= 0) continue;
-        ringCells.push({ index, demand });
-        ringDemand += demand;
+        const amount = Math.min(demand, remainingCapacity);
+        changes.push({ index, previous: demand });
+        residual[index] = Math.max(0, demand - amount);
+        score += amount;
+        population += amount;
+        remainingCapacity -= amount;
+        if (remainingCapacity <= EPSILON) break;
       }
-      if (ringDemand <= 0) continue;
-      const served = Math.min(remainingCapacity, ringDemand);
-      const ratio = served / ringDemand;
-      for (const item of ringCells) {
-        const amount = item.demand * ratio;
-        changes.push({ index: item.index, previous: item.demand });
-        residual[item.index] = Math.max(0, item.demand - amount);
-        score += amount * scores[item.index] / 100;
-      }
-      population += served;
-      remainingCapacity -= served;
       if (remainingCapacity <= EPSILON) break;
     }
     return { score, population, changes };
@@ -133,7 +125,8 @@ export function solveExactOptimal({
             ? -1
             : y * columns + x;
         })
-        .filter((index) => index >= 0 && initialDemand[index] > 0));
+        .filter((index) => index >= 0 && initialDemand[index] > 0)
+        .sort((a, b) => heatExposure[b] - heatExposure[a] || a - b));
       const option = {
         id: candidate.id,
         x: candidate.x,
@@ -356,7 +349,7 @@ export function solveExactOptimal({
       candidateCount: groups.length,
       optionCount: groups.reduce((sum, group) => sum + group.options.length, 0),
       elapsedMs: Math.round(performance.now() - startedAt),
-      allocationRule: "capacity-centre-outward-manhattan",
+      allocationRule: "capacity-centre-outward-euclidean-heat-tiebreak",
     },
   };
 }

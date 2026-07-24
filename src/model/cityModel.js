@@ -49,7 +49,6 @@ export const LAYER_DEFINITIONS = [
 
 const clamp = (value, min = 0, max = 1) =>
   Math.min(max, Math.max(min, value));
-const CELL_HALF_DIAGONAL = Math.SQRT2 / 2;
 const POPULATION_AREA_SCALE = (CELL_SIZE_METRES / 160) ** 2;
 const MIN_CANDIDATE_SPACING_CELLS = Math.max(2, Math.round(320 / CELL_SIZE_METRES));
 
@@ -114,8 +113,8 @@ const pricedCells = baseCells.filter((cell) => cell.housingPricePsm > 0);
 const MIN_HOUSING_PRICE = Math.min(...pricedCells.map((cell) => cell.housingPricePsm));
 const MAX_HOUSING_PRICE = Math.max(...pricedCells.map((cell) => cell.housingPricePsm));
 
-const distanceToCellArea = (a, b) =>
-  Math.max(0, Math.hypot(a.x - b.x, a.y - b.y) - CELL_HALF_DIAGONAL);
+const distanceBetweenCellCentresMetres = (a, b) =>
+  Math.hypot(a.x - b.x, a.y - b.y) * CELL_SIZE_METRES;
 
 const shuffled = (items, random = Math.random) => {
   const copy = [...items];
@@ -148,21 +147,28 @@ export function buildCity(time = "afternoon", scenario = "baseline") {
 
 const demandBaselineCache = new WeakMap();
 const demandLayerCache = new WeakMap();
-const ringOffsetCache = new Map();
+const distanceBandCache = new Map();
 const CELL_AREA_HECTARES = (CELL_SIZE_METRES * CELL_SIZE_METRES) / 10_000;
 
-const getRingOffsets = (radius) => {
-  if (ringOffsetCache.has(radius)) return ringOffsetCache.get(radius);
-  const radiusInCells = Math.max(0, Math.floor(radius / CELL_SIZE_METRES));
-  const rings = Array.from({ length: radiusInCells + 1 }, () => []);
-  for (let offsetY = -radiusInCells; offsetY <= radiusInCells; offsetY += 1) {
-    for (let offsetX = -radiusInCells; offsetX <= radiusInCells; offsetX += 1) {
-      const ring = Math.abs(offsetX) + Math.abs(offsetY);
-      if (ring <= radiusInCells) rings[ring].push({ x: offsetX, y: offsetY });
+const getDistanceBands = (radius) => {
+  if (distanceBandCache.has(radius)) return distanceBandCache.get(radius);
+  const reach = Math.max(0, Math.ceil(radius / CELL_SIZE_METRES));
+  const maximumDistanceSquared = (radius / CELL_SIZE_METRES) ** 2;
+  const offsetsByDistance = new Map();
+  for (let offsetY = -reach; offsetY <= reach; offsetY += 1) {
+    for (let offsetX = -reach; offsetX <= reach; offsetX += 1) {
+      const distanceSquared = offsetX ** 2 + offsetY ** 2;
+      if (distanceSquared > maximumDistanceSquared) continue;
+      const band = offsetsByDistance.get(distanceSquared) ?? [];
+      band.push({ x: offsetX, y: offsetY });
+      offsetsByDistance.set(distanceSquared, band);
     }
   }
-  ringOffsetCache.set(radius, rings);
-  return rings;
+  const bands = [...offsetsByDistance.entries()]
+    .sort(([distanceA], [distanceB]) => distanceA - distanceB)
+    .map(([, offsets]) => offsets);
+  distanceBandCache.set(radius, bands);
+  return bands;
 };
 
 const demandLayerSurfaceFor = (demandState) => {
@@ -219,34 +225,39 @@ const demandLayerSurfaceFor = (demandState) => {
 const stationCapacity = (station) =>
   station.capacity ?? STATION_CAPACITY_BY_RADIUS[station.radius] ?? 0;
 
-const applyShelterToDemand = (residual, available, shelter) => {
+const applyShelterToDemand = (residual, available, heatExposure, shelter) => {
   let remainingCapacity = stationCapacity(shelter);
   let served = 0;
   const servedByCell = [];
   if (remainingCapacity <= 0) return { served, servedByCell };
 
-  for (const ring of getRingOffsets(shelter.radius ?? 100)) {
+  for (const band of getDistanceBands(shelter.radius ?? 100)) {
     const demandCells = [];
-    let ringDemand = 0;
-    for (const offset of ring) {
+    let bandDemand = 0;
+    for (const offset of band) {
       const x = shelter.x + offset.x;
       const y = shelter.y + offset.y;
       if (x < 0 || x >= GRID_COLS || y < 0 || y >= GRID_ROWS) continue;
       const index = y * GRID_COLS + x;
       if (!available[index] || residual[index] <= 0) continue;
-      demandCells.push({ index, demand: residual[index] });
-      ringDemand += residual[index];
+      demandCells.push({
+        index,
+        demand: residual[index],
+        heat: heatExposure[index],
+      });
+      bandDemand += residual[index];
     }
-    if (ringDemand <= 0) continue;
-    const ringServed = Math.min(remainingCapacity, ringDemand);
-    const ratio = ringServed / ringDemand;
+    if (bandDemand > remainingCapacity) {
+      demandCells.sort((a, b) => b.heat - a.heat || a.index - b.index);
+    }
     for (const item of demandCells) {
-      const amount = item.demand * ratio;
+      const amount = Math.min(item.demand, remainingCapacity);
       residual[item.index] = Math.max(0, residual[item.index] - amount);
       servedByCell.push({ index: item.index, amount });
+      served += amount;
+      remainingCapacity -= amount;
+      if (remainingCapacity <= 1e-6) break;
     }
-    served += ringServed;
-    remainingCapacity -= ringServed;
     if (remainingCapacity <= 1e-6) break;
   }
   return { served, servedByCell };
@@ -254,6 +265,7 @@ const applyShelterToDemand = (residual, available, shelter) => {
 
 const createBaselineDemand = (cells) => {
   const available = new Uint8Array(GRID_COLS * GRID_ROWS);
+  const heatExposure = new Float32Array(GRID_COLS * GRID_ROWS);
   const initial = new Float64Array(GRID_COLS * GRID_ROWS);
   const residual = new Float64Array(GRID_COLS * GRID_ROWS);
   let totalPopulation = 0;
@@ -262,6 +274,7 @@ const createBaselineDemand = (cells) => {
     const index = cell.y * GRID_COLS + cell.x;
     const population = Math.max(0, estimateCellPopulation(cell));
     available[index] = 1;
+    heatExposure[index] = clamp(cell.heat);
     initial[index] = population;
     residual[index] = population;
     totalPopulation += population;
@@ -269,10 +282,16 @@ const createBaselineDemand = (cells) => {
 
   let servedByExisting = 0;
   for (const shelter of MAP_EXISTING_SHELTERS) {
-    servedByExisting += applyShelterToDemand(residual, available, shelter).served;
+    servedByExisting += applyShelterToDemand(
+      residual,
+      available,
+      heatExposure,
+      shelter,
+    ).served;
   }
   return {
     available,
+    heatExposure,
     initial,
     afterExisting: residual,
     totalPopulation,
@@ -296,7 +315,12 @@ export function getDemandState(cells, placedStations = []) {
   const perStation = new Map();
   let servedByPlaced = 0;
   for (const station of placedStations) {
-    const result = applyShelterToDemand(residual, baseline.available, station);
+    const result = applyShelterToDemand(
+      residual,
+      baseline.available,
+      baseline.heatExposure,
+      station,
+    );
     servedByPlaced += result.served;
     perStation.set(station.id, result.served);
     for (const item of result.servedByCell) servedByCell[item.index] += item.amount;
@@ -433,12 +457,11 @@ export function getCellMetrics(cell, radius, cells, placedStations = []) {
     coveredCells: 0,
     peopleReached: 0,
   };
-  const radiusInCells = radius / CELL_SIZE_METRES;
   const covered = cells.filter(
     (other) =>
       !other.outside &&
       !other.water &&
-      distanceToCellArea(other, cell) <= radiusInCells,
+      distanceBetweenCellCentresMetres(other, cell) <= radius,
   );
   const demand = covered.reduce(
     (sum, other) =>
