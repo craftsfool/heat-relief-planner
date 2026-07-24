@@ -43,8 +43,6 @@ const INITIAL_GREEDY_DEMO = {
 };
 
 export default function App() {
-  const [scenario, setScenario] = useState("baseline");
-  const [time, setTime] = useState("afternoon");
   const [mode, setMode] = useState("base");
   const [activeLayer, setActiveLayer] = useState("demand");
   const [selectedId, setSelectedId] = useState(null);
@@ -56,11 +54,11 @@ export default function App() {
   const [greedyDemo, setGreedyDemo] = useState(INITIAL_GREEDY_DEMO);
   const greedyDemoRunRef = useRef(0);
   const [challengeIds, setChallengeIds] = useState(() =>
-    selectChallengeSites(buildCity("afternoon", "baseline"), DEFAULT_CANDIDATE_COUNT)
+    selectChallengeSites(buildCity(), DEFAULT_CANDIDATE_COUNT)
       .map((cell) => cell.id),
   );
 
-  const cells = useMemo(() => buildCity(time, scenario), [time, scenario]);
+  const cells = useMemo(() => buildCity(), []);
   const activeSubzone = useMemo(
     () => MAP_SUBZONES.find((subzone) => subzone.code === activeSubzoneCode) ?? null,
     [activeSubzoneCode],
@@ -315,8 +313,6 @@ export default function App() {
   const applyGlobalImprovedSolution = async () => {
     closeGreedyDemo();
     const solverConfig = {
-      scenario,
-      time,
       subzoneCode: activeSubzoneCode,
       budget: STARTING_BUDGET,
     };
@@ -424,16 +420,6 @@ export default function App() {
   return (
     <div className="app-shell">
       <TopBar
-        scenario={scenario}
-        onScenarioChange={(value) => {
-          closeGreedyDemo();
-          setScenario(value);
-        }}
-        time={time}
-        onTimeChange={(value) => {
-          closeGreedyDemo();
-          setTime(value);
-        }}
         budget={budget}
         placedCount={placed.length}
         peopleReached={populationScore}

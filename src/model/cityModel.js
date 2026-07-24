@@ -6,6 +6,18 @@ export const CELL_SIZE_METRES = queenstownGrid.metadata.cellSizeMetres;
 export const MAP_METADATA = queenstownGrid.metadata;
 export const MAP_SUBZONES = queenstownGrid.subzones;
 export const MAP_EXISTING_SHELTERS = queenstownGrid.existingShelters ?? [];
+export const PLANNING_WEIGHTS = Object.freeze({
+  scenarios: Object.freeze({
+    baseline: 0.60,
+    highDemand: 0.25,
+    heatwave: 0.15,
+  }),
+  times: Object.freeze({
+    morning: 0.20,
+    afternoon: 0.60,
+    evening: 0.20,
+  }),
+});
 export const DEMAND_DENSITY_BANDWIDTH_METRES = 160;
 export const STATION_RADII = [100, 150, 200, 250, 300];
 export const STATION_CAPACITY_BY_RADIUS = {
@@ -43,7 +55,7 @@ export const LAYER_DEFINITIONS = [
     label: "Heat exposure",
     shortLabel: "Heat",
     color: "#f15b5a",
-    description: "Modelled heat exposure for the selected time and scenario.",
+    description: "Weighted heat exposure across planning scenarios and time periods.",
   },
 ];
 
@@ -125,12 +137,20 @@ const shuffled = (items, random = Math.random) => {
   return copy;
 };
 
-export function buildCity(time = "afternoon", scenario = "baseline") {
-  const heatTimeBoost = time === "afternoon" ? 0.16 : time === "morning" ? -0.05 : 0.04;
-  const flowTimeBoost = time === "evening" ? 0.12 : time === "morning" ? 0.08 : 0;
-  const scenarioHeatBoost = scenario === "heatwave" ? 0.18 : 0;
-  const scenarioFlowBoost = scenario === "high-growth" ? 0.18 : 0;
-  const scenarioDemandMultiplier = scenario === "high-growth" ? 1.15 : 1;
+export function buildCity() {
+  const heatTimeBoost =
+    PLANNING_WEIGHTS.times.morning * -0.05
+    + PLANNING_WEIGHTS.times.afternoon * 0.16
+    + PLANNING_WEIGHTS.times.evening * 0.04;
+  const flowTimeBoost =
+    PLANNING_WEIGHTS.times.morning * 0.08
+    + PLANNING_WEIGHTS.times.evening * 0.12;
+  const scenarioHeatBoost = PLANNING_WEIGHTS.scenarios.heatwave * 0.18;
+  const scenarioFlowBoost = PLANNING_WEIGHTS.scenarios.highDemand * 0.18;
+  const scenarioDemandMultiplier =
+    PLANNING_WEIGHTS.scenarios.baseline
+    + PLANNING_WEIGHTS.scenarios.highDemand * 1.15
+    + PLANNING_WEIGHTS.scenarios.heatwave;
 
   return baseCells.map((cell) => {
     if (cell.outside || cell.water) return { ...cell };

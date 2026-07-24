@@ -1,13 +1,9 @@
-import { CalendarDays, Dices, Earth, RotateCcw, Shuffle, Target, ThermometerSun } from "lucide-react";
+import { Dices, Earth, RotateCcw, Shuffle, Target } from "lucide-react";
 import { HoldActionButton } from "./HoldActionButton";
 
 const avatarSrc = `${import.meta.env.BASE_URL}avatar.jpg`;
 
 export function TopBar({
-  scenario,
-  onScenarioChange,
-  time,
-  onTimeChange,
   budget,
   placedCount,
   peopleReached,
@@ -33,27 +29,6 @@ export function TopBar({
           <h1>Heat Relief Planner</h1>
           <p>{candidateCount}-site strategy challenge</p>
         </div>
-      </div>
-
-      <div className="scenario-controls">
-        <label className="select-control">
-          <CalendarDays size={16} />
-          <span>Scenario</span>
-          <select value={scenario} onChange={(event) => onScenarioChange(event.target.value)}>
-            <option value="baseline">Baseline 2026</option>
-            <option value="high-growth">High demand</option>
-            <option value="heatwave">Heatwave day</option>
-          </select>
-        </label>
-        <label className="select-control">
-          <ThermometerSun size={16} />
-          <span>Time</span>
-          <select value={time} onChange={(event) => onTimeChange(event.target.value)}>
-            <option value="morning">Morning (7-10am)</option>
-            <option value="afternoon">Afternoon (2-5pm)</option>
-            <option value="evening">Evening (5-8pm)</option>
-          </select>
-        </label>
       </div>
 
       <div className="topbar-summary">

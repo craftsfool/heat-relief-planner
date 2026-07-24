@@ -21,7 +21,7 @@ const server = await createServer({
 
 try {
   const cityModel = await server.ssrLoadModule("/src/model/cityModel.js");
-  const cells = cityModel.buildCity("afternoon", "baseline");
+  const cells = cityModel.buildCity();
   const baselineDemand = cityModel.getDemandState(cells);
   const demandCells = cells
     .filter((cell) => !cell.outside && !cell.water)

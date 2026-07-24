@@ -10,7 +10,7 @@ import {
   getDemandState,
 } from "./cityModel.js";
 
-export const SOLVER_SCHEMA_VERSION = 2;
+export const SOLVER_SCHEMA_VERSION = 3;
 export const STANDARD_BUDGET = 2_500_000;
 
 const compactDate = (value) => String(value ?? "unknown")
@@ -25,21 +25,12 @@ export const SOLVER_DATA_VERSION = [
   `s${SOLVER_SCHEMA_VERSION}`,
 ].join("-");
 
-export const STANDARD_SCENARIOS = ["baseline", "high-growth", "heatwave"];
-export const STANDARD_TIMES = ["morning", "afternoon", "evening"];
-
 const safePart = (value) => String(value)
   .toLowerCase()
   .replace(/[^a-z0-9-]+/g, "-")
   .replace(/^-+|-+$/g, "");
 
 export function normalizeSolverConfig(config = {}) {
-  const scenario = STANDARD_SCENARIOS.includes(config.scenario)
-    ? config.scenario
-    : "baseline";
-  const time = STANDARD_TIMES.includes(config.time)
-    ? config.time
-    : "afternoon";
   const subzoneCode = MAP_SUBZONES.some((subzone) => subzone.code === config.subzoneCode)
     ? config.subzoneCode
     : null;
@@ -48,7 +39,7 @@ export function normalizeSolverConfig(config = {}) {
     ? Math.max(180_000, Math.min(20_000_000, Math.round(requestedBudget / 1000) * 1000))
     : STANDARD_BUDGET;
 
-  return { scenario, time, subzoneCode, budget };
+  return { subzoneCode, budget };
 }
 
 export function getSolverKey(config = {}) {
@@ -57,8 +48,6 @@ export function getSolverKey(config = {}) {
   return [
     SOLVER_DATA_VERSION,
     scope,
-    normalized.scenario,
-    normalized.time,
     normalized.budget,
   ].join("/");
 }
@@ -74,7 +63,7 @@ export function isStandardSolverConfig(config = {}) {
 
 export function createSolverTask(config = {}) {
   const normalized = normalizeSolverConfig(config);
-  const allCells = buildCity(normalized.time, normalized.scenario);
+  const allCells = buildCity();
   const cells = normalized.subzoneCode
     ? allCells.filter((cell) => cell.subzoneCode === normalized.subzoneCode)
     : allCells;

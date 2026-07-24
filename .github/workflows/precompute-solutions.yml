@@ -21,11 +21,6 @@ jobs:
   solve:
     runs-on: ubuntu-latest
     timeout-minutes: 330
-    strategy:
-      fail-fast: false
-      matrix:
-        scenario: [baseline, high-growth, heatwave]
-        time: [morning, afternoon, evening]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -33,24 +28,10 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
-      - name: Solve ${{ matrix.scenario }} / ${{ matrix.time }}
-        run: npm run precompute:solution -- --scenario=${{ matrix.scenario }} --time=${{ matrix.time }}
-      - uses: actions/upload-artifact@v4
-        with:
-          name: solution-${{ matrix.scenario }}-${{ matrix.time }}
-          path: public/solutions
-          if-no-files-found: error
-
-  publish:
-    needs: solve
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        with:
-          pattern: solution-*
-          path: public/solutions
-          merge-multiple: true
+      - name: Solve Queenstown and all subzones
+        run: npm run precompute:solution -- --all-scopes
+      - name: Verify complete solution cache
+        run: npm run test:cache
       - name: Commit refreshed solution cache
         run: |
           git config user.name "github-actions[bot]"
