@@ -124,7 +124,6 @@ export function allocatePopulationToStations({
   stations,
   residual,
   available,
-  heatExposure,
   columns,
   rows,
   getDistanceBands,
@@ -170,13 +169,12 @@ export function allocatePopulationToStations({
         const demandPosition = demandPositionByIndex.get(index);
         if (demandPosition === undefined) continue;
         const distanceSquared = offset.x ** 2 + offset.y ** 2;
-        const heatTieBreak = Math.round((1 - heatExposure[index]) * 1000);
         addEdge(
           graph,
           stationOffset + stationIndex,
           demandOffset + demandPosition,
           capacity,
-          distanceSquared * 2000 + heatTieBreak,
+          distanceSquared,
         );
       }
     }

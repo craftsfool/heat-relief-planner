@@ -243,7 +243,7 @@ const demandLayerSurfaceFor = (demandState) => {
 
 const stationCapacity = (station) => station.capacity ?? 0;
 
-const applyShelterToDemand = (residual, available, heatExposure, shelter) => {
+const applyShelterToDemand = (residual, available, shelter) => {
   let remainingCapacity = stationCapacity(shelter);
   let served = 0;
   const servedByCell = [];
@@ -251,7 +251,6 @@ const applyShelterToDemand = (residual, available, heatExposure, shelter) => {
 
   for (const band of getDistanceBands(shelter.radius ?? 100)) {
     const demandCells = [];
-    let bandDemand = 0;
     for (const offset of band) {
       const x = shelter.x + offset.x;
       const y = shelter.y + offset.y;
@@ -261,13 +260,9 @@ const applyShelterToDemand = (residual, available, heatExposure, shelter) => {
       demandCells.push({
         index,
         demand: residual[index],
-        heat: heatExposure[index],
       });
-      bandDemand += residual[index];
     }
-    if (bandDemand > remainingCapacity) {
-      demandCells.sort((a, b) => b.heat - a.heat || a.index - b.index);
-    }
+    demandCells.sort((a, b) => a.index - b.index);
     for (const item of demandCells) {
       const amount = Math.min(item.demand, remainingCapacity);
       residual[item.index] = Math.max(0, residual[item.index] - amount);
@@ -303,7 +298,6 @@ const createBaselineDemand = (cells) => {
     servedByExisting += applyShelterToDemand(
       residual,
       available,
-      heatExposure,
       shelter,
     ).served;
   }
@@ -333,7 +327,6 @@ export function getDemandState(cells, placedStations = []) {
     stations: placedStations,
     residual,
     available: baseline.available,
-    heatExposure: baseline.heatExposure,
     columns: GRID_COLS,
     rows: GRID_ROWS,
     getDistanceBands,
@@ -434,7 +427,7 @@ export function selectChallengeSites(cells, count = 12, random = Math.random) {
 
 export function rankChallengeSites(cells, siteIds) {
   const cellById = new Map(cells.map((cell) => [cell.id, cell]));
-  return siteIds
+  const ranked = siteIds
     .map((id) => cellById.get(id))
     .filter(Boolean)
     .map((cell) => {
@@ -443,12 +436,30 @@ export function rankChallengeSites(cells, siteIds) {
         ...cell,
         potentialPeople: metrics.peopleReached,
         rankEfficiency: metrics.cost > 0 ? metrics.peopleReached / metrics.cost : 0,
+        heatPriority: metrics.heatPriority,
       };
-    })
-    .sort((a, b) =>
-      b.rankEfficiency - a.rankEfficiency
-      || b.potentialPeople - a.potentialPeople
-      || a.id.localeCompare(b.id));
+    });
+
+  const ordered = [];
+  const remaining = [...ranked];
+  while (remaining.length) {
+    remaining.sort((a, b) => b.rankEfficiency - a.rankEfficiency);
+    const bandMaximum = remaining[0].rankEfficiency;
+    const cutoff = bandMaximum * 0.95;
+    const band = remaining
+      .filter((candidate) => candidate.rankEfficiency >= cutoff)
+      .sort((a, b) =>
+        b.heatPriority - a.heatPriority
+        || b.rankEfficiency - a.rankEfficiency
+        || b.potentialPeople - a.potentialPeople
+        || a.id.localeCompare(b.id));
+    const bandIds = new Set(band.map((candidate) => candidate.id));
+    ordered.push(...band);
+    for (let index = remaining.length - 1; index >= 0; index -= 1) {
+      if (bandIds.has(remaining[index].id)) remaining.splice(index, 1);
+    }
+  }
+  return ordered;
 }
 
 export function estimateCellPopulation(cell) {
@@ -470,6 +481,7 @@ export function getCellMetrics(cell, capacity, cells, placedStations = []) {
     protectedHours: 0,
     coveredCells: 0,
     peopleReached: 0,
+    heatPriority: 0,
   };
   const covered = cells.filter(
     (other) =>
@@ -491,8 +503,18 @@ export function getCellMetrics(cell, capacity, cells, placedStations = []) {
     capacity,
     cost,
   };
-  const before = getDemandState(cells, placedStations).servedByPlaced;
-  const after = getDemandState(cells, [...placedStations, proposed]).servedByPlaced;
+  const beforeState = getDemandState(cells, placedStations);
+  const afterState = getDemandState(cells, [...placedStations, proposed]);
+  const before = beforeState.servedByPlaced;
+  const after = afterState.servedByPlaced;
+  let weightedHeat = 0;
+  let weightedDemand = 0;
+  for (const other of covered) {
+    const index = other.y * GRID_COLS + other.x;
+    const demandAmount = Math.max(0, beforeState.residual[index] ?? 0);
+    weightedHeat += demandAmount * other.heat;
+    weightedDemand += demandAmount;
+  }
 
   return {
     cost,
@@ -500,6 +522,7 @@ export function getCellMetrics(cell, capacity, cells, placedStations = []) {
     protectedHours: Math.round(demand * 240),
     coveredCells: covered.length,
     peopleReached: Math.round(Math.max(0, after - before)),
+    heatPriority: weightedDemand > 0 ? weightedHeat / weightedDemand : 0,
   };
 }
 

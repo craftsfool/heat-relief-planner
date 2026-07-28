@@ -26,11 +26,9 @@ const stationCost = (candidate, capacity) => {
 
 const evaluate = (selection, demandCells, columns, rows) => {
   const residual = new Float64Array(columns * rows);
-  const heatExposure = new Float32Array(columns * rows);
   for (const cell of demandCells) {
     const index = cell.y * columns + cell.x;
     residual[index] = cell.population;
-    heatExposure[index] = cell.heat;
   }
   let population = 0;
   for (const station of selection) {
@@ -61,10 +59,9 @@ const evaluate = (selection, demandCells, columns, rows) => {
           cells.push({
             index,
             demand: residual[index],
-            heat: heatExposure[index],
           });
       }
-      cells.sort((a, b) => b.heat - a.heat || a.index - b.index);
+      cells.sort((a, b) => a.index - b.index);
       for (const cell of cells) {
         const amount = Math.min(cell.demand, capacity);
         residual[cell.index] -= amount;
@@ -179,4 +176,4 @@ for (const seed of [7, 19, 41, 83, 131]) {
   assert.equal(exactResult.spent, brute.spent, `cost mismatch for seed ${seed}`);
 }
 
-console.log("Euclidean, heat-tiebroken exact solver matches brute force on 5 deterministic overlap cases.");
+console.log("Euclidean distance-only exact solver matches brute force on 5 deterministic overlap cases.");

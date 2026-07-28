@@ -58,7 +58,7 @@ export function solveGlobalConfiguration(config, {
   exact.stats.proofMethod = exact.stats.globallyOptimal
     ? "feasible-population-equals-unbounded-capacity-budget-upper-bound"
     : "full-traversal-with-exact-refinement";
-  exact.stats.allocationRule = "joint-max-flow-euclidean-distance-heat-tiebreak";
+  exact.stats.allocationRule = "joint-max-flow-euclidean-distance-only";
   exact.stats.traversedCandidateCount = task.candidates.length;
   exact.stats.refinementPoolLimit = Number.isFinite(refinementLimit)
     ? refinementLimit

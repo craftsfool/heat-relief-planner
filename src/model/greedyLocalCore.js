@@ -4,6 +4,7 @@ const LOCAL_PASSES = 2;
 const GLOBAL_PRIORITY_POOL = 900;
 const REFINEMENT_POOL_LIMIT = 24;
 const SPATIAL_BLOCK_CELLS = 16;
+const NEAR_EQUAL_EFFICIENCY_RATIO = 0.95;
 
 const buildRings = (radius) => {
   const reach = Math.ceil(radius / CELL_SIZE_METRES);
@@ -64,9 +65,9 @@ export function solveGreedyLocal(input, { onProgress } = {}) {
     let remainingCapacity = capacity;
     let gain = 0;
     let served = 0;
+    let heatLoad = 0;
     for (const ring of serviceRings) {
       const ringCells = [];
-      let ringDemand = 0;
       for (const offset of ring) {
         const x = candidate.x + offset.x;
         const y = candidate.y + offset.y;
@@ -74,31 +75,33 @@ export function solveGreedyLocal(input, { onProgress } = {}) {
         const index = y * columns + x;
         const demand = residualDemand[index];
         if (demand <= 0) continue;
-        ringCells.push({ index, demand, heat: heatExposure[index] });
-        ringDemand += demand;
+        ringCells.push({ index, demand });
       }
-      if (ringDemand > remainingCapacity) {
-        ringCells.sort((a, b) => b.heat - a.heat || a.index - b.index);
-      }
+      ringCells.sort((a, b) => a.index - b.index);
       for (const item of ringCells) {
         const amount = Math.min(item.demand, remainingCapacity);
         gain += amount;
         served += amount;
+        heatLoad += amount * heatExposure[item.index];
         remainingCapacity -= amount;
         if (remainingCapacity <= 1e-6) break;
       }
       if (remainingCapacity <= 1e-6) break;
     }
-    return { gain, served };
+    return {
+      gain,
+      served,
+      heatPriority: served > 0 ? heatLoad / served : 0,
+    };
   };
 
   const applyStation = (station, residualDemand) => {
     let remainingCapacity = station.capacity ?? 0;
     let gain = 0;
     let served = 0;
+    let heatLoad = 0;
     for (const ring of serviceRings) {
       const ringCells = [];
-      let ringDemand = 0;
       for (const offset of ring) {
         const x = station.x + offset.x;
         const y = station.y + offset.y;
@@ -106,23 +109,25 @@ export function solveGreedyLocal(input, { onProgress } = {}) {
         const index = y * columns + x;
         const demand = residualDemand[index];
         if (demand <= 0) continue;
-        ringCells.push({ index, demand, heat: heatExposure[index] });
-        ringDemand += demand;
+        ringCells.push({ index, demand });
       }
-      if (ringDemand > remainingCapacity) {
-        ringCells.sort((a, b) => b.heat - a.heat || a.index - b.index);
-      }
+      ringCells.sort((a, b) => a.index - b.index);
       for (const item of ringCells) {
         const amount = Math.min(item.demand, remainingCapacity);
         residualDemand[item.index] = Math.max(0, residualDemand[item.index] - amount);
         gain += amount;
         served += amount;
+        heatLoad += amount * heatExposure[item.index];
         remainingCapacity -= amount;
         if (remainingCapacity <= 1e-6) break;
       }
       if (remainingCapacity <= 1e-6) break;
     }
-    return { gain, served };
+    return {
+      gain,
+      served,
+      heatPriority: served > 0 ? heatLoad / served : 0,
+    };
   };
 
   const evaluateSolution = (solution) => {
@@ -177,6 +182,8 @@ export function solveGreedyLocal(input, { onProgress } = {}) {
     while (true) {
       const remainingBudget = budget - spent;
       let best = null;
+      let maximumDensity = 0;
+      let nearEqualOptions = [];
       let evaluatedOptions = 0;
       for (const candidate of searchCandidates) {
         if (selectedIds.has(candidate.id)) continue;
@@ -188,20 +195,26 @@ export function solveGreedyLocal(input, { onProgress } = {}) {
           const result = evaluateStation(candidate, capacity, state.residualDemand);
           const density = result.gain / cost;
           if (collectPotential && density > bestCandidateDensity) bestCandidateDensity = density;
-          if (
-            result.gain > 0
-            && (!best || density > best.density
-              || (density === best.density && result.gain > best.gain))
-          ) {
-            best = {
-              ...candidate,
-              radius: serviceRadius,
-              capacity,
-              cost,
-              gain: result.gain,
-              served: result.served,
-              density,
-            };
+          if (result.gain <= 0) continue;
+          const option = {
+            ...candidate,
+            radius: serviceRadius,
+            capacity,
+            cost,
+            gain: result.gain,
+            served: result.served,
+            heatPriority: result.heatPriority,
+            density,
+          };
+          if (density > maximumDensity) {
+            maximumDensity = density;
+            const cutoff = maximumDensity * NEAR_EQUAL_EFFICIENCY_RATIO;
+            nearEqualOptions = nearEqualOptions.filter(
+              (item) => item.density >= cutoff,
+            );
+          }
+          if (density >= maximumDensity * NEAR_EQUAL_EFFICIENCY_RATIO) {
+            nearEqualOptions.push(option);
           }
         }
         if (collectPotential && bestCandidateDensity > 0) {
@@ -211,6 +224,12 @@ export function solveGreedyLocal(input, { onProgress } = {}) {
           ));
         }
       }
+      best = nearEqualOptions.sort((a, b) =>
+        b.heatPriority - a.heatPriority
+        || b.density - a.density
+        || b.gain - a.gain
+        || a.id.localeCompare(b.id)
+        || a.capacity - b.capacity)[0] ?? null;
       if (!best) break;
       const station = {
         id: best.id,
@@ -234,6 +253,7 @@ export function solveGreedyLocal(input, { onProgress } = {}) {
           marginalGain: Math.round(applied.gain),
           peopleServed: Math.round(applied.served),
           efficiency: Math.round(best.density * 100000),
+          heatPriority: Math.round(best.heatPriority * 100),
           totalScore: Math.round(state.value),
           spent,
           remainingBudget: budget - spent,

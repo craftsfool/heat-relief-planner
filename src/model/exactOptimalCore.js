@@ -1,5 +1,6 @@
 const CELL_SIZE_METRES = 20;
 const EPSILON = 1e-8;
+const NEAR_EQUAL_EFFICIENCY_RATIO = 0.95;
 const COST_UNIT = 1000;
 const DEFAULT_SERVICE_RADIUS = 300;
 const DEFAULT_CAPACITY_OPTIONS = [500, 1000, 1500, 2000, 2500, 3000, 3500, 4000, 4500];
@@ -81,6 +82,7 @@ export function solveExactOptimal({
     let remainingCapacity = option.capacity;
     let score = 0;
     let population = 0;
+    let heatLoad = 0;
     for (const ring of option.rings) {
       for (const index of ring) {
         const demand = residual[index];
@@ -88,18 +90,24 @@ export function solveExactOptimal({
         const amount = Math.min(demand, remainingCapacity);
         score += amount;
         population += amount;
+        heatLoad += amount * heatExposure[index];
         remainingCapacity -= amount;
         if (remainingCapacity <= EPSILON) break;
       }
       if (remainingCapacity <= EPSILON) break;
     }
-    return { score, population };
+    return {
+      score,
+      population,
+      heatPriority: population > 0 ? heatLoad / population : 0,
+    };
   };
 
   const applyOption = (option, residual) => {
     let remainingCapacity = option.capacity;
     let score = 0;
     let population = 0;
+    let heatLoad = 0;
     const changes = [];
     for (const ring of option.rings) {
       for (const index of ring) {
@@ -110,12 +118,18 @@ export function solveExactOptimal({
         residual[index] = Math.max(0, demand - amount);
         score += amount;
         population += amount;
+        heatLoad += amount * heatExposure[index];
         remainingCapacity -= amount;
         if (remainingCapacity <= EPSILON) break;
       }
       if (remainingCapacity <= EPSILON) break;
     }
-    return { score, population, changes };
+    return {
+      score,
+      population,
+      heatPriority: population > 0 ? heatLoad / population : 0,
+      changes,
+    };
   };
 
   const rollback = (change, residual) => {
@@ -133,7 +147,7 @@ export function solveExactOptimal({
           : y * columns + x;
       })
       .filter((index) => index >= 0 && initialDemand[index] > 0)
-      .sort((a, b) => heatExposure[b] - heatExposure[a] || a - b));
+      .sort((a, b) => a - b));
     for (const capacity of capacityOptions) {
       const cost = stationCost(candidate, capacity, costModel);
       if (cost > budget) continue;
@@ -204,20 +218,46 @@ export function solveExactOptimal({
     let spent = 0;
     while (true) {
       let best = null;
+      let maximumDensity = 0;
+      let nearEqualOptions = [];
       for (let groupIndex = 0; groupIndex < groups.length; groupIndex += 1) {
         if (selected.has(groupIndex)) continue;
         for (const option of groups[groupIndex].options) {
           if (spent + option.cost > budget) continue;
           const gain = evaluateOption(option, residual);
           const density = gain.score / option.cost;
-          if (!best || (preferGain
-            ? gain.score > best.gain.score + EPSILON
-              || (Math.abs(gain.score - best.gain.score) <= EPSILON && density > best.density)
-            : density > best.density + EPSILON
-              || (Math.abs(density - best.density) <= EPSILON && gain.score > best.gain.score))) {
-            best = { groupIndex, option, gain, density };
+          const evaluated = { groupIndex, option, gain, density };
+          if (preferGain) {
+            if (!best
+              || gain.score > best.gain.score + EPSILON
+              || (Math.abs(gain.score - best.gain.score) <= EPSILON
+                && (density > best.density + EPSILON
+                  || (Math.abs(density - best.density) <= EPSILON
+                    && gain.heatPriority > best.gain.heatPriority)))) {
+              best = evaluated;
+            }
+            continue;
+          }
+          if (gain.score <= EPSILON) continue;
+          if (density > maximumDensity) {
+            maximumDensity = density;
+            const cutoff = maximumDensity * NEAR_EQUAL_EFFICIENCY_RATIO;
+            nearEqualOptions = nearEqualOptions.filter(
+              (item) => item.density >= cutoff,
+            );
+          }
+          if (density >= maximumDensity * NEAR_EQUAL_EFFICIENCY_RATIO) {
+            nearEqualOptions.push(evaluated);
           }
         }
+      }
+      if (!preferGain) {
+        best = nearEqualOptions.sort((a, b) =>
+          b.gain.heatPriority - a.gain.heatPriority
+          || b.density - a.density
+          || b.gain.score - a.gain.score
+          || a.option.id.localeCompare(b.option.id)
+          || a.option.capacity - b.option.capacity)[0] ?? null;
       }
       if (!best || best.gain.score <= EPSILON) break;
       const change = applyOption(best.option, residual);
@@ -318,7 +358,8 @@ export function solveExactOptimal({
       .sort((a, b) =>
         b.gain.score / b.option.cost - a.gain.score / a.option.cost
         || b.gain.score - a.gain.score
-        || b.gain.population - a.gain.population);
+        || b.gain.population - a.gain.population
+        || b.gain.heatPriority - a.gain.heatPriority);
 
     for (const { option } of branches) {
       const change = applyOption(option, residual);
@@ -359,7 +400,7 @@ export function solveExactOptimal({
       candidateCount: groups.length,
       optionCount: groups.reduce((sum, group) => sum + group.options.length, 0),
       elapsedMs: Math.round(performance.now() - startedAt),
-      allocationRule: "capacity-centre-outward-euclidean-heat-tiebreak",
+      allocationRule: "capacity-centre-outward-euclidean-distance-only",
     },
   };
 }

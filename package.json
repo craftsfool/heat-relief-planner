@@ -13,6 +13,7 @@
     "generate:socioeconomic": "node scripts/map-queenstown-socioeconomic-data.mjs",
     "preview": "vite preview",
     "test:solver": "node scripts/verify-exact-solver.mjs",
+    "test:heat-priority": "node scripts/verify-heat-priority.mjs",
     "test:cache": "node scripts/verify-solution-cache.mjs"
   },
   "dependencies": {

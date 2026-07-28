@@ -54,11 +54,11 @@ export function LayerPanel({ layers, candidateCount, activeLayer, mode, onCandid
           <dl>
             <div><dt>Population demand</dt><dd>Smoothed residual demand density after existing and newly placed shelters serve nearby cells.</dd></div>
             <div><dt>Regional cost</dt><dd>The HDB price proxy scales construction cost at each candidate cell.</dd></div>
-            <div><dt>Heat exposure</dt><dd>Not part of the score; within an equal-distance ring, hotter cells are served first.</dd></div>
+            <div><dt>Heat exposure</dt><dd>Does not change service order. Among options within 5% of the best efficiency, the hotter served area is preferred.</dd></div>
             <div><dt>Scenario weights</dt><dd>Baseline 60%, high demand 25%, heatwave 15%.</dd></div>
             <div><dt>Time weights</dt><dd>Morning 20%, afternoon 60%, evening 20%.</dd></div>
           </dl>
-          <p>The solver maximises people served within the available budget using straight-line metric distance.</p>
+          <p>The solver serves nearest residual demand first using straight-line metric distance, then uses heat only for near-equal-efficiency site selection.</p>
         </section>
       )}
 
