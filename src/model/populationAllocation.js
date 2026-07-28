@@ -169,12 +169,13 @@ export function allocatePopulationToStations({
         const demandPosition = demandPositionByIndex.get(index);
         if (demandPosition === undefined) continue;
         const distanceSquared = offset.x ** 2 + offset.y ** 2;
+        const deterministicTieBreak = index;
         addEdge(
           graph,
           stationOffset + stationIndex,
           demandOffset + demandPosition,
           capacity,
-          distanceSquared,
+          distanceSquared * (residual.length + 1) + deterministicTieBreak,
         );
       }
     }
